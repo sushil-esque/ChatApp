@@ -1,5 +1,5 @@
-import crypto from 'crypto'
 import bcrypt from 'bcrypt'
+import crypto from 'crypto'
 
 export function generateOtp(): string {
   // generates a random 6 digit number

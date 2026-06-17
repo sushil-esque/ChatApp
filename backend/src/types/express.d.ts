@@ -1,10 +1,15 @@
-import { User, RefreshToken} from '@prisma/client'
+import { RefreshToken, User} from '@prisma/client'
 
 declare global {
   namespace Express {
     interface Request {
-      user: User,
+      cookies: {
+        refreshToken?: string
+      }
       session: RefreshToken
+       user: User
     }
   }
 }
+
+export {}

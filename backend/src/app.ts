@@ -1,7 +1,8 @@
-import express from "express";
-import authRouter from "./routes/auth.routes";
-import { errorHandler } from "./middlewares/errorHandler";
 import cookieParser from "cookie-parser";
+import express from "express";
+
+import { errorHandler } from "./middlewares/errorHandler";
+import authRouter from "./routes/auth.routes";
 const app = express();
 app.use(express.json());
 app.use(cookieParser());  

@@ -1,18 +1,17 @@
-import type { Request, Response } from "express";
+
+import crypto from "crypto";
+
 import { prisma } from "../db/prisma";
 import { loginDto, otpDto, registerDto } from "../dtos/auth.dto";
-import { asyncHandler } from "../middlewares/asyncHandler";
 import { CustomError } from "../errors/customError";
-import bcrypt from "bcrypt";
-import { sendOtp } from "../services/auth.service";
+import { asyncHandler } from "../middlewares/asyncHandler";
 import * as authService from "../services/auth.service";
 import { generateAccessToken, verifyRefreshToken } from "../utils/jwt";
-import crypto from "crypto";
 
 export const register = asyncHandler(async (req, res) => {
   console.log(req.body);
   const parsed = registerDto.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "Invalid Payload", details: parsed.error.issues });
+  if (!parsed.success) return res.status(400).json({ details: parsed.error.issues, error: "Invalid Payload" });
   const { email, name, password } = parsed.data;
   const user = await authService.register(name, email, password);
   res.status(201).json(user);
@@ -22,7 +21,7 @@ export const verifyEmail = asyncHandler(async (req, res) => {
   console.log(req.body);
 
   const parsed = otpDto.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: "Invalid Payload", details: parsed.error.issues });
+  if (!parsed.success) return res.status(400).json({ details: parsed.error.issues, error: "Invalid Payload" });
   const { email, otp } = parsed.data;
 
   const deviceName = req.headers["user-agent"];
@@ -32,12 +31,12 @@ export const verifyEmail = asyncHandler(async (req, res) => {
 
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
     maxAge: 30 * 24 * 60 * 60 * 1000,
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
   });
 
-  res.status(200).json({ message: "Email verified successfully", accessToken, user });
+  res.status(200).json({ accessToken, message: "Email verified successfully", user });
 });
 
 export const getMe = asyncHandler(async (req, res) => {
@@ -65,7 +64,7 @@ export const refresh = asyncHandler(async (req, res) => {
 export const login = asyncHandler(async (req, res) => {
   const parsed = loginDto.safeParse(req.body);
 
-  if (!parsed.success) return res.status(400).json({ error: "Invalid Payload", details: parsed.error.issues });
+  if (!parsed.success) return res.status(400).json({ details: parsed.error.issues, error: "Invalid Payload" });
 
   const { email, password } = parsed.data;
   const deviceName = req.headers["user-agent"];
@@ -73,15 +72,15 @@ export const login = asyncHandler(async (req, res) => {
   const { accessToken, refreshToken, user } = await authService.login(email, password, deviceName, ipAddress);
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
     maxAge: 30 * 24 * 60 * 60 * 1000,
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
   });
-  return res.status(200).json({ message: "Login successful", accessToken, user });
+  return res.status(200).json({ accessToken, message: "Login successful", user });
 });
 
 export const logout = asyncHandler(async (req, res) => {
-  const refreshToken = req.cookies.refreshToken
+  const refreshToken = req.cookies.refreshToken;
   
   if (refreshToken) {
     await authService.logout(refreshToken)  
@@ -89,8 +88,8 @@ export const logout = asyncHandler(async (req, res) => {
 
   res.clearCookie('refreshToken', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production',
   })
 
   res.status(200).json({ message: 'Logged out successfully' })
@@ -100,8 +99,8 @@ export const logoutAll = asyncHandler(async (req, res) => {
 
   res.clearCookie('refreshToken', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production',
   })
 
   res.status(200).json({ message: 'Logged out from all devices' })

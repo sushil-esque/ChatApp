@@ -1,6 +1,8 @@
-import type { Request, Response, NextFunction } from "express";
-import { CustomError } from "../errors/customError";
+import type { NextFunction, Request, Response } from "express";
+
 import jwt from 'jsonwebtoken'
+
+import { CustomError } from "../errors/customError";
 export const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error(err.stack);
   if (err instanceof CustomError) {
@@ -8,12 +10,12 @@ export const errorHandler = (err: Error, req: Request, res: Response, next: Next
   }
 
   if (err instanceof jwt.TokenExpiredError) {
-    res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' })
+    res.status(401).json({ code: 'TOKEN_EXPIRED', error: 'Token expired' })
     return
   }
   
   if (err instanceof jwt.JsonWebTokenError) {
-    res.status(401).json({ error: 'Invalid token', code: 'TOKEN_INVALID' })
+    res.status(401).json({ code: 'TOKEN_INVALID', error: 'Invalid token' })
     return
   }
 
