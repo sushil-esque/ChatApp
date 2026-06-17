@@ -5,5 +5,5 @@ if (!process.env.PORT) {
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is not set");
 }
-const config = { port: process.env.PORT, databaseUrl: process.env.DATABASE_URL };
+const config = { databaseUrl: process.env.DATABASE_URL, port: process.env.PORT };
 export default config;

@@ -1,6 +1,5 @@
-import express from "express";
-import config from "./config/config.js";
 import app from "./app.js";
+import config from "./config/config.js";
 const port = config.port;
 
 app.get("/", (req, res) => {
