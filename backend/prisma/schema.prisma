@@ -18,36 +18,80 @@ enum Role {
 }
 
 model User {
-  id String @id @default(uuid())
-  name String
-  email String @unique
-  passwordHash String
-  avatarUrl String?
-  verified Boolean @default(false)
-  role Role @default(USER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  otp Otp?
+  id            String         @id @default(uuid())
+  name          String
+  email         String         @unique
+  passwordHash  String
+  avatarUrl     String?
+  verified      Boolean        @default(false)
+  role          Role           @default(USER)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  otp           Otp?
   refreshTokens RefreshToken[]
+  messages       Message[]
+  conversationsAsA Conversation[] @relation("UserA")
+  conversationsAsB Conversation[] @relation("UserB")
+    blocksGiven      Block[]        @relation("Blocker")
+  blocksReceived   Block[]        @relation("Blocked")
 }
 
 model Otp {
-  id String @id @default(uuid())
-  otpHash String
+  id        String   @id @default(uuid())
+  otpHash   String
   expiresAt DateTime
   userId    String   @unique
   createdAt DateTime @default(now())
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model RefreshToken {
-  id         String   @id @default(uuid())
-  refreshTokenHash      String   @unique
-  userId     String
-  deviceName String?  
-  ipAddress  String?
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
+  id               String   @id @default(uuid())
+  refreshTokenHash String   @unique
+  userId           String
+  deviceName       String?
+  ipAddress        String?
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+}
+
+model Conversation {
+    id       String @id @default(uuid())
+    userAId String
+    userBId String
+    userALastReadAt DateTime?
+    userBLastReadAt DateTime?
+    lastMessageAt DateTime?
+    createdAt DateTime @default(now())
+    userA User @relation("UserA",fields: [userAId], references: [id])
+    userB User @relation("UserB",fields: [userBId],references: [id])
+    messages Message[]
+    @@unique([userAId,userBId])
+
+}
+
+model Message {
+  id       String @id @default(uuid())
+  conversationId String
+  senderId String
+  content  String
+  isDeleted Boolean @default(false)
+  createdAt DateTime @default(now())
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  sender User @relation(fields: [senderId], references: [id])
+}
+
+model Block {
+  id        String   @id @default(uuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  blocker User @relation("Blocker", fields: [blockerId], references: [id])
+  blocked User @relation("Blocked", fields: [blockedId], references: [id])
+
+  @@unique([blockerId, blockedId])
 }

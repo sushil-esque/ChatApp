@@ -1,4 +1,3 @@
-
 import crypto from "crypto";
 
 import { prisma } from "../db/prisma";
@@ -9,7 +8,6 @@ import * as authService from "../services/auth.service";
 import { generateAccessToken, verifyRefreshToken } from "../utils/jwt";
 
 export const register = asyncHandler(async (req, res) => {
-  console.log(req.body);
   const parsed = registerDto.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ details: parsed.error.issues, error: "Invalid Payload" });
   const { email, name, password } = parsed.data;
@@ -18,8 +16,6 @@ export const register = asyncHandler(async (req, res) => {
 });
 
 export const verifyEmail = asyncHandler(async (req, res) => {
-  console.log(req.body);
-
   const parsed = otpDto.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ details: parsed.error.issues, error: "Invalid Payload" });
   const { email, otp } = parsed.data;
@@ -81,27 +77,27 @@ export const login = asyncHandler(async (req, res) => {
 
 export const logout = asyncHandler(async (req, res) => {
   const refreshToken = req.cookies.refreshToken;
-  
+
   if (refreshToken) {
-    await authService.logout(refreshToken)  
+    await authService.logout(refreshToken);
   }
 
-  res.clearCookie('refreshToken', {
+  res.clearCookie("refreshToken", {
     httpOnly: true,
-    sameSite: 'strict',
-    secure: process.env.NODE_ENV === 'production',
-  })
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
+  });
 
-  res.status(200).json({ message: 'Logged out successfully' })
-})
+  res.status(200).json({ message: "Logged out successfully" });
+});
 export const logoutAll = asyncHandler(async (req, res) => {
-  await authService.logoutAll(req.user.id)  // delete all sessions for user
+  await authService.logoutAll(req.user.id); // delete all sessions for user
 
-  res.clearCookie('refreshToken', {
+  res.clearCookie("refreshToken", {
     httpOnly: true,
-    sameSite: 'strict',
-    secure: process.env.NODE_ENV === 'production',
-  })
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
+  });
 
-  res.status(200).json({ message: 'Logged out from all devices' })
-})
+  res.status(200).json({ message: "Logged out from all devices" });
+});
