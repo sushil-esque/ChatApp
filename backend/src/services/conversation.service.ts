@@ -47,6 +47,7 @@ export async function getConversations(userId: string) {
       messages: {
         orderBy: { createdAt: "desc" },
         take: 1,
+        where: { isDeleted: false },
       },
     },
   });

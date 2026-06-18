@@ -1,5 +1,5 @@
 import { createConversationDto } from "../dtos/conversation.dto";
-import { getMessagesDto, sendMessageDto } from "../dtos/message.dto";
+import { getMessagesDto, sendMessageDto, paramsConversationDto, paramsMessageIdDto } from "../dtos/message.dto";
 import { asyncHandler } from "../middlewares/asyncHandler";
 import * as conversationService from "../services/conversation.service.js";
 import * as messageService from "../services/message.service.js";
@@ -19,19 +19,27 @@ export const getConversations = asyncHandler(async (req, res) => {
 
 export const sendMessage = asyncHandler(async (req, res) => {
   const parsed = sendMessageDto.safeParse(req.body);
-  const conversationId = req.params.id as string;
   if (!parsed.success) return res.status(400).json({ error: "Invalid payload", details: parsed.error.issues });
+  const paramsParsed = paramsConversationDto.safeParse(req.params);
+  if (!paramsParsed.success) return res.status(400).json({ error: "Invalid conversation id", details: paramsParsed.error.issues });
+  const conversationId = paramsParsed.data.id;
   const message = await messageService.sendMessage(conversationId, req.user.id, parsed.data.content);
   res.status(201).json(message);
 });
 
-export const getMessages = asyncHandler(async(req,res)=>{
-    const parsed = getMessagesDto.safeParse(req.query)
-      if (!parsed.success) return res.status(400).json({ error: 'Invalid payload', details: parsed.error.issues })
-        const messages = await messageService.getMessages(req.params.id as string,req.user.id,parsed.data.cursor)
-      res.status(200).json(messages)
-})
+export const getMessages = asyncHandler(async (req, res) => {
+  const parsed = getMessagesDto.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid payload", details: parsed.error.issues });
+  const paramsParsed = paramsConversationDto.safeParse(req.params);
+  if (!paramsParsed.success) return res.status(400).json({ error: "Invalid conversation id", details: paramsParsed.error.issues });
+  const messages = await messageService.getMessages(paramsParsed.data.id, req.user.id, parsed.data.cursor);
+  res.status(200).json(messages);
+});
 export const deleteMessage = asyncHandler(async (req, res) => {
-  await messageService.deleteMessage(req.params.messageId as string, req.user.id)
-  res.status(204).send()
-})
+  const paramsParsed = paramsMessageIdDto.safeParse(req.params);
+  if (!paramsParsed.success) return res.status(400).json({ error: "Invalid message id", details: paramsParsed.error.issues });
+  const convParamsParsed = paramsConversationDto.safeParse(req.params);
+  if (!convParamsParsed.success) return res.status(400).json({ error: "Invalid conversation id", details: convParamsParsed.error.issues });
+  await messageService.deleteMessage(convParamsParsed.data.id, paramsParsed.data.messageId, req.user.id);
+  res.status(204).send();
+});

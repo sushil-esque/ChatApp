@@ -50,7 +50,7 @@ export async function getMessages(conversationId: string, userId: string, cursor
   } // this is to make sure the user belongs to the conversation
 
   const isUserA = conversation.userAId === userId;
-  const recipentLastReadAt = isUserA ? conversation.userBLastReadAt : conversation.userALastReadAt;
+  const recipientLastReadAt = isUserA ? conversation.userBLastReadAt : conversation.userALastReadAt;
   const [messages] = await prisma.$transaction([
     prisma.message.findMany({
       where: {
@@ -73,8 +73,8 @@ export async function getMessages(conversationId: string, userId: string, cursor
   return messages.map((message) => {
     let isReadAt = false;
     if (message.senderId === userId) {
-      if (recipentLastReadAt) {
-        if (recipentLastReadAt < message.createdAt) {
+      if (recipientLastReadAt) {
+        if (recipientLastReadAt < message.createdAt) {
           isReadAt = false;
         } else {
           isReadAt = true;
@@ -91,9 +91,10 @@ export async function getMessages(conversationId: string, userId: string, cursor
   });
 }
 
-export async function deleteMessage(messageId: string, userId: string) {
+export async function deleteMessage(conversationId: string, messageId: string, userId: string) {
   const message = await prisma.message.findUnique({ where: { id: messageId } });
   if (!message) throw new CustomError("Message not found", 404);
+  if (message.conversationId !== conversationId) throw new CustomError("Message does not belong to conversation", 400);
   if (message.senderId !== userId) throw new CustomError("Unauthorized", 403);
 
   return prisma.message.update({
