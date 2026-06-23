@@ -44,18 +44,19 @@ export function LoginPage() {
       navigate("/chat");
     },
     onError: (error: any) => {
+      const status = error?.status ?? error?.response?.status;
+      const code = error?.data?.code ?? error?.response?.data?.code;
+      const message =
+        error?.data?.message ??
+        error?.response?.data?.message ??
+        "Login failed. Please try again.";
       // Check if email is not verified
-      if (
-        error.response?.status === 403 &&
-        error.response?.data?.code === "EMAIL_NOT_VERIFIED"
-      ) {
+      if (status === 403 && code === "EMAIL_NOT_VERIFIED") {
         const email = form.getValues("email");
         navigate("/verify-email", { state: { email } });
         toast.error("Please verify your email first");
       } else {
-        const errorMessage =
-          error.response?.data?.message || "Login failed. Please try again.";
-        toast.error(errorMessage);
+        toast.error(message);
       }
     },
   });

@@ -51,7 +51,7 @@ export async function getMessages(conversationId: string, userId: string, cursor
 
   const isUserA = conversation.userAId === userId;
   const recipientLastReadAt = isUserA ? conversation.userBLastReadAt : conversation.userALastReadAt;
-  const [messages] = await Promise.all([
+  const [messages] = await prisma.$transaction([
     prisma.message.findMany({
       where: { conversationId, isDeleted: false },
       orderBy: { createdAt: "desc" },

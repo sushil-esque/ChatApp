@@ -36,9 +36,9 @@ api.interceptors.response.use(
       originalRequest._retry = true; // a guard for an infinite loop that could be caused by 401
       try {
         // call refresh endpoint — browser sends refreshToken cookie automatically
-        const { data } = await axios.post(
+        const { data } = await axios.get(
           "http://localhost:3000/api/auth/refresh",
-          {},
+
           { withCredentials: true },
         );
         setAccessToken(data.accessToken);
