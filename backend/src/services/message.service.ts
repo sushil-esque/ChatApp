@@ -53,10 +53,7 @@ export async function getMessages(conversationId: string, userId: string, cursor
   const recipientLastReadAt = isUserA ? conversation.userBLastReadAt : conversation.userALastReadAt;
   const [messages] = await prisma.$transaction([
     prisma.message.findMany({
-      where: {
-        conversationId,
-        isDeleted: false,
-      },
+      where: { conversationId, isDeleted: false },
       orderBy: { createdAt: "desc" },
       take: 30,
       ...(cursor && { cursor: { id: cursor }, skip: 1 }),
@@ -66,7 +63,10 @@ export async function getMessages(conversationId: string, userId: string, cursor
     }),
     prisma.conversation.update({
       where: { id: conversationId },
-      data: { userALastReadAt: isUserA ? new Date() : undefined, userBLastReadAt: isUserA ? undefined : new Date() },
+      data: {
+        userALastReadAt: isUserA ? new Date() : undefined,
+        userBLastReadAt: isUserA ? undefined : new Date(),
+      },
     }),
   ]);
 
