@@ -112,6 +112,46 @@ function getUnreadCount(conversation: Conversation, currentUserId: string) {
   ).length;
 }
 
+// Shifts messages across infinite query pages to keep page boundaries intact during optimistic updates.
+function insertOptimisticMessage(
+  oldData: { pages: Message[][]; pageParams: unknown[] } | undefined,
+  optimisticMessage: Message,
+): { pages: Message[][]; pageParams: unknown[] } | undefined {
+  if (!oldData) return oldData;
+
+  const newPages: Message[][] = [];
+  let carryOver: Message | null = optimisticMessage;
+
+  for (let i = 0; i < oldData.pages.length; i++) {
+    const page = oldData.pages[i];
+    const newPage = carryOver ? [carryOver, ...page] : [...page];
+
+    if (newPage.length > 30) {
+      carryOver = newPage.pop()!;
+    } else {
+      carryOver = null;
+    }
+    newPages.push(newPage);
+  }
+
+  if (carryOver) {
+    newPages.push([carryOver]);
+  }
+
+  // Recalculate pageParams based on the new page boundaries
+  const newPageParams = [oldData.pageParams[0]]; // Keep the first page param (usually undefined)
+  for (let i = 1; i < newPages.length; i++) {
+    const prevPage = newPages[i - 1];
+    newPageParams.push(prevPage[prevPage.length - 1]?.id);
+  }
+
+  return {
+    ...oldData,
+    pages: newPages,
+    pageParams: newPageParams,
+  };
+}
+
 // Sidebar component
 function ConversationSidebar({
   conversations,
@@ -355,7 +395,7 @@ export default function ChatPage() {
   } = useInfiniteQuery({
     queryKey: ["messages", selectedConversationId],
     queryFn: async ({ pageParam }) => {
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      // await new Promise((resolve) => setTimeout(resolve, 3000));
 
       const res = await conversationApi.getMessages(
         selectedConversationId!,
@@ -414,6 +454,13 @@ export default function ChatPage() {
       void fetchNextPage();
     }
   }, [topInView, hasNextPage, isFetchingNextPage, fetchNextPage]);
+  useEffect(() => {
+    canLoadNextPage.current = false;
+  }, [selectedConversationId]);
+
+  useEffect(() => {
+    canLoadNextPage.current = true;
+  }, [data?.pages.length]);
 
   // Restore scroll position after new page loads
   useEffect(() => {
@@ -450,27 +497,29 @@ export default function ChatPage() {
     mutationFn: (content: string) =>
       conversationApi.sendMessage(selectedConversationId!, content),
     onMutate: async (content) => {
+      const targetConversationId = selectedConversationId!; // Capture the id here
+
       // cancel any outgoing refetches so they don't overwrite optimistic update
       await queryClient.cancelQueries({
-        queryKey: ["messages", selectedConversationId],
+        queryKey: ["messages", targetConversationId],
       });
 
       // snapshot previous data in case we need to roll back
       const previousMessages = queryClient.getQueryData([
         "messages",
-        selectedConversationId,
+        targetConversationId,
       ]);
 
       // optimistically add message to cache immediately
       await queryClient.setQueryData(
-        ["messages", selectedConversationId], // which cache entry to update
+        ["messages", targetConversationId], // which cache entry to update
 
         // how to update it
         (old: { pages: Message[][]; pageParams: unknown[] } | undefined) => {
           if (!old) return old;
           const optimisticMessage: Message = {
             id: `temp-${Date.now()}`,
-            conversationId: selectedConversationId!,
+            conversationId: targetConversationId,
             senderId: user!.id,
             content,
             isDeleted: false,
@@ -494,44 +543,22 @@ export default function ChatPage() {
                 [msg2, msg1],  
                        ],
                pageParams: [     
-                          undefined,       
-                         "msg1-id",      
+                           undefined,       
+                          "msg1-id",      
                         ]
                     }
       */
-          const newPages = [...old.pages];
-          const removeLastMessage = () => {
-            const firstPage = [...newPages[0]];
-            firstPage.pop();
-            newPages[0] = firstPage;
-          };
-
-          if (old.pages[0].length === 30) {
-            removeLastMessage();
-          }
-          newPages[0] = [optimisticMessage, ...newPages[0]]; // prepend to first page
-
-          return { ...old, pages: newPages };
+          return insertOptimisticMessage(old, optimisticMessage);
         },
       );
-
-      //The requestAnimationFrame() method of the DedicatedWorkerGlobalScope interface
-      // tells the browser you wish to perform an animation frame request and call a
-      //user-suppliedcallback function before the next repaint.
-      // requestAnimationFrame(() => {
-      //   const scrollContainer = scrollAreaRef.current?.querySelector(
-      //     "[data-radix-scroll-area-viewport]",
-      //   );
-      //   if (scrollContainer) {
-      //     scrollContainer.scrollTop = scrollContainer.scrollHeight;
-      //   }
-      // });
-      return { previousMessages };
+      return { previousMessages, conversationId: targetConversationId };
     },
-    onSuccess: async () => {
+    onSuccess: async (_, __, context) => {
+      const targetConversationId =
+        context?.conversationId || selectedConversationId;
       // refetch to replace optimistic message with real one from server
       await queryClient.invalidateQueries({
-        queryKey: ["messages", selectedConversationId],
+        queryKey: ["messages", targetConversationId],
       });
       await queryClient.invalidateQueries({
         queryKey: ["conversations"],
@@ -547,11 +574,13 @@ export default function ChatPage() {
       // });
     },
     onError: (err, content, context) => {
+      const targetConversationId =
+        context?.conversationId || selectedConversationId;
       //                   here context = { previousMessages }  this is what onMutate returned
       // roll back to previous messages if mutation failed
       if (context?.previousMessages) {
         queryClient.setQueryData(
-          ["messages", selectedConversationId],
+          ["messages", targetConversationId],
           context.previousMessages,
         );
       }
@@ -605,11 +634,32 @@ export default function ChatPage() {
       //   scrollContainer.scrollTop = scrollContainer.scrollHeight;
       // }, 0);
       scrollContainer.scrollTop = scrollContainer.scrollHeight;
-    }
-    if (!canLoadNextPage.current) {
       canLoadNextPage.current = true;
     }
   }, [selectedConversationId, data?.pages.length]);
+
+  // Scroll to bottom when a new message is added (sent or received)
+  const lastMessage = messages[messages.length - 1];
+  const lastMessageId = lastMessage?.id;
+  const lastMessageSenderId = lastMessage?.senderId;
+
+  useEffect(() => {
+    const scrollContainer = scrollAreaRef.current?.querySelector(
+      "[data-radix-scroll-area-viewport]",
+    );
+    if (!scrollContainer) return;
+
+    const isOwnMessage = lastMessageSenderId === user?.id;
+    const isNearBottom =
+      scrollContainer.scrollHeight -
+        scrollContainer.scrollTop -
+        scrollContainer.clientHeight <
+      150;
+
+    if (isOwnMessage || isNearBottom) {
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    }
+  }, [lastMessageId, lastMessageSenderId, user?.id]);
 
   const selectedConversation = conversations.find(
     (c) => c.id === selectedConversationId,
@@ -783,7 +833,7 @@ export default function ChatPage() {
                   <div className="relative flex flex-col gap-6 p-4 md:p-6">
                     {/* top sentinel — triggers loading older messages when scrolled into view */}
                     <div ref={topRef} className="h-1 w-full" />
-                    
+
                     {isFetchingNextPage && (
                       <div className="absolute top-4 left-0 right-0 z-10 flex justify-center">
                         <div className="rounded-lg bg-background/50 p-1 backdrop-blur-sm">
@@ -791,7 +841,7 @@ export default function ChatPage() {
                         </div>
                       </div>
                     )}
-                    
+
                     {!hasNextPage && messages.length > 0 && (
                       <p className="text-center text-xs text-muted-foreground py-2">
                         No more messages
