@@ -330,7 +330,7 @@ export default function ChatPage() {
   // Intersection observer refs for infinite scroll
   const { ref: topRef, inView: topInView } = useInView();
   const prevScrollHeightRef = useRef<number>(0);
-  const hasInitiallyLoaded = useRef(false);
+  const canLoadNextPage = useRef(false);
   // Fetch conversations
   const { data: conversations = [], isLoading: conversationsLoading } =
     useQuery({
@@ -351,14 +351,19 @@ export default function ChatPage() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-    isSuccess,
     isLoading: messagesLoading,
   } = useInfiniteQuery({
     queryKey: ["messages", selectedConversationId],
-    queryFn: ({ pageParam }) =>
-      conversationApi
-        .getMessages(selectedConversationId!, pageParam as string | undefined)
-        .then((res) => res.data),
+    queryFn: async ({ pageParam }) => {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      const res = await conversationApi.getMessages(
+        selectedConversationId!,
+        pageParam as string | undefined,
+      );
+
+      return res.data;
+    },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => {
       // if less than 30 messages returned, no more pages
@@ -372,18 +377,31 @@ export default function ChatPage() {
       // reverse page order so older pages appear first
       // reverse messages within each page so oldest message appears first
       // use spread [...] before reverse to avoid mutating the original cached array
+      /*
+      data : {
+                pages: [           // Message[][] — array of pages
+                [msg4, msg3],    
+                [msg2, msg1],  
+                       ],
+               pageParams: [     
+                          undefined,       
+                         "msg1-id",      
+                        ]
+                    }
+      */
       pages: [...data.pages].reverse().map((page) => [...page].reverse()),
     }),
   });
 
   // flatten all pages into one array — now in correct oldest to newest order
   const messages = data?.pages.flat() ?? [];
-  console.log(data?.pages, "pages ");
-  console.log(messages, "messages");
+  // console.log(data, "data");
+  // console.log(data?.pages, "pages ");
+  // console.log(messages, "messages");
 
   // Load more when top sentinel is in view
   useEffect(() => {
-    if (!hasInitiallyLoaded.current) return; // skip first load
+    if (!canLoadNextPage.current) return; // skip first load
     if (topInView && hasNextPage && !isFetchingNextPage) {
       // save scroll height before loading more so we can restore position
       const scrollContainer = scrollAreaRef.current?.querySelector(
@@ -392,6 +410,7 @@ export default function ChatPage() {
 
       prevScrollHeightRef.current = scrollContainer?.scrollHeight ?? 0;
       //                            e.g. 1200px
+      canLoadNextPage.current = false;
       void fetchNextPage();
     }
   }, [topInView, hasNextPage, isFetchingNextPage, fetchNextPage]);
@@ -444,7 +463,9 @@ export default function ChatPage() {
 
       // optimistically add message to cache immediately
       await queryClient.setQueryData(
-        ["messages", selectedConversationId],
+        ["messages", selectedConversationId], // which cache entry to update
+
+        // how to update it
         (old: { pages: Message[][]; pageParams: unknown[] } | undefined) => {
           if (!old) return old;
           const optimisticMessage: Message = {
@@ -466,20 +487,45 @@ export default function ChatPage() {
           // page 0 = newest messages
           // within each page, messages are newest first too
           // so add to BEGINNING of page 0 (it will appear at bottom after select reversal)
+          /*
+      data : {
+                pages: [           // Message[][] — array of pages
+                [msg4, msg3],    
+                [msg2, msg1],  
+                       ],
+               pageParams: [     
+                          undefined,       
+                         "msg1-id",      
+                        ]
+                    }
+      */
           const newPages = [...old.pages];
+          const removeLastMessage = () => {
+            const firstPage = [...newPages[0]];
+            firstPage.pop();
+            newPages[0] = firstPage;
+          };
+
+          if (old.pages[0].length === 30) {
+            removeLastMessage();
+          }
           newPages[0] = [optimisticMessage, ...newPages[0]]; // prepend to first page
 
           return { ...old, pages: newPages };
         },
       );
-      requestAnimationFrame(() => {
-        const scrollContainer = scrollAreaRef.current?.querySelector(
-          "[data-radix-scroll-area-viewport]",
-        );
-        if (scrollContainer) {
-          scrollContainer.scrollTop = scrollContainer.scrollHeight;
-        }
-      });
+
+      //The requestAnimationFrame() method of the DedicatedWorkerGlobalScope interface
+      // tells the browser you wish to perform an animation frame request and call a
+      //user-suppliedcallback function before the next repaint.
+      // requestAnimationFrame(() => {
+      //   const scrollContainer = scrollAreaRef.current?.querySelector(
+      //     "[data-radix-scroll-area-viewport]",
+      //   );
+      //   if (scrollContainer) {
+      //     scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      //   }
+      // });
       return { previousMessages };
     },
     onSuccess: async () => {
@@ -491,16 +537,17 @@ export default function ChatPage() {
         queryKey: ["conversations"],
       });
       // scroll to bottom after message sent
-      requestAnimationFrame(() => {
-        const scrollContainer = scrollAreaRef.current?.querySelector(
-          "[data-radix-scroll-area-viewport]",
-        );
-        if (scrollContainer) {
-          scrollContainer.scrollTop = scrollContainer.scrollHeight;
-        }
-      });
+      // requestAnimationFrame(() => {
+      //   const scrollContainer = scrollAreaRef.current?.querySelector(
+      //     "[data-radix-scroll-area-viewport]",
+      //   );
+      //   if (scrollContainer) {
+      //     scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      //   }
+      // });
     },
     onError: (err, content, context) => {
+      //                   here context = { previousMessages }  this is what onMutate returned
       // roll back to previous messages if mutation failed
       if (context?.previousMessages) {
         queryClient.setQueryData(
@@ -508,6 +555,7 @@ export default function ChatPage() {
           context.previousMessages,
         );
       }
+      console.log(err, "error");
       toast.error("Failed to send message");
     },
   });
@@ -548,12 +596,18 @@ export default function ChatPage() {
     );
     if (!scrollContainer) return;
     console.log(scrollContainer.scrollHeight, "scrollHeight on initial load");
-    // only scroll to bottom on first page load or when conversation changes, or when after sending a message (handled in sendMessageMutation onSuccess)
+    console.log(scrollContainer.scrollTop, "scrollTop on initial load");
+
+    // only scroll to bottom on first page load or when conversation changes
     if (data?.pages.length === 1) {
       console.log("scrolling to bottom on initial load or conversation change");
-      setTimeout(() => {
-        scrollContainer.scrollTop = scrollContainer.scrollHeight;
-      }, 100);
+      // setTimeout(() => {
+      //   scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      // }, 0);
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    }
+    if (!canLoadNextPage.current) {
+      canLoadNextPage.current = true;
     }
   }, [selectedConversationId, data?.pages.length]);
 
@@ -726,22 +780,23 @@ export default function ChatPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-6 p-4 md:p-6">
+                  <div className="relative flex flex-col gap-6 p-4 md:p-6">
                     {/* top sentinel — triggers loading older messages when scrolled into view */}
-                    <div ref={topRef}>
-                      {isFetchingNextPage && (
-                        <div className="flex justify-center py-2">
-                          <div className="flex gap-3">
-                            <Skeleton className="h-8 w-48 rounded-lg" />
-                          </div>
+                    <div ref={topRef} className="h-1 w-full" />
+                    
+                    {isFetchingNextPage && (
+                      <div className="absolute top-4 left-0 right-0 z-10 flex justify-center">
+                        <div className="rounded-lg bg-background/50 p-1 backdrop-blur-sm">
+                          <Skeleton className="h-8 w-48 rounded-lg shadow-sm" />
                         </div>
-                      )}
-                      {!hasNextPage && messages.length > 0 && (
-                        <p className="text-center text-xs text-muted-foreground py-2">
-                          No more messages
-                        </p>
-                      )}
-                    </div>
+                      </div>
+                    )}
+                    
+                    {!hasNextPage && messages.length > 0 && (
+                      <p className="text-center text-xs text-muted-foreground py-2">
+                        No more messages
+                      </p>
+                    )}
 
                     {/* existing grouped messages render */}
                     {Object.entries(groupedMessages).map(([date, msgs]) => (
