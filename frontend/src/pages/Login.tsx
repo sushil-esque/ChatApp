@@ -23,6 +23,7 @@ import {
   FieldLabel,
   FieldError,
 } from "@/components/ui/field";
+import type { AxiosError } from "axios";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -39,17 +40,17 @@ export function LoginPage() {
   const mutation = useMutation({
     mutationFn: authApi.login,
     onSuccess: (data) => {
+      console.log(data);
       setAccessToken(data.data.accessToken);
       setUser(data.data.user);
       navigate("/chat");
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<{ error: string; code: string }>) => {
+      console.log(error);
       const status = error?.status ?? error?.response?.status;
-      const code = error?.data?.code ?? error?.response?.data?.code;
+      const code = error?.response?.data?.code;
       const message =
-        error?.data?.message ??
-        error?.response?.data?.message ??
-        "Login failed. Please try again.";
+        error?.response?.data?.error ?? "Login failed. Please try again.";
       // Check if email is not verified
       if (status === 403 && code === "EMAIL_NOT_VERIFIED") {
         const email = form.getValues("email");

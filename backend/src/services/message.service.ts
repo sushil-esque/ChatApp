@@ -61,13 +61,15 @@ export async function getMessages(conversationId: string, userId: string, cursor
         sender: { select: { id: true, name: true, avatarUrl: true } },
       },
     }),
-    prisma.conversation.update({
-      where: { id: conversationId },
-      data: {
-        userALastReadAt: isUserA ? new Date() : undefined,
-        userBLastReadAt: isUserA ? undefined : new Date(),
-      },
-    }),
+    ...(!cursor ? [
+      prisma.conversation.update({
+        where: { id: conversationId },
+        data: {
+          userALastReadAt: isUserA ? new Date() : undefined,
+          userBLastReadAt: isUserA ? undefined : new Date(),
+        },
+      })
+    ] : [])
   ]);
 
   return messages.map((message) => {

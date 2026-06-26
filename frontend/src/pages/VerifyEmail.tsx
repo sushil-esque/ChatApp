@@ -56,6 +56,7 @@ export function VerifyEmailPage() {
     onSuccess: (data) => {
       setAccessToken(data.data.accessToken);
       setUser(data.data.user);
+      toast.success("Email verified successfully");
       navigate("/chat");
     },
     onError: (error: { data?: { error?: string } }) => {
@@ -68,8 +69,8 @@ export function VerifyEmailPage() {
 
   const resendMutation = useMutation({
     mutationFn: () => {
-      // TODO: Wire this to authApi.resendOtp if it exists
-      return Promise.resolve();
+      if (!email) return Promise.reject(new Error("Email is required"));
+      return authApi.resendOtp({ email });
     },
     onSuccess: () => {
       toast.success("Verification code resent to your email");

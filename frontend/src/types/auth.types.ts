@@ -14,6 +14,10 @@ export interface VerifyEmailPayload {
   otp: string
 }
 
+export interface ResendOtpPayload {
+  email: string
+}
+
 export interface User {
   id: string
   name: string

@@ -15,3 +15,7 @@ export const otpDto = z.object({
   email: z.email(),
   otp: z.string().length(6),
 });
+
+export const resendOtpDto = z.object({
+  email: z.email(),
+});

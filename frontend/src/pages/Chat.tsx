@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useInView } from "react-intersection-observer";
 import {
@@ -39,6 +39,8 @@ import {
 } from "@tanstack/react-query";
 import { authApi } from "@/api/auth";
 import { conversationApi } from "@/api/conversation";
+import { userApi } from "@/api/user";
+import type { SearchUser } from "@/api/user";
 import { setAccessToken } from "@/api/client";
 import { toast } from "sonner";
 import { useAuthStore } from "@/store/authStore";
@@ -162,6 +164,8 @@ function ConversationSidebar({
   currentUser,
   onClose,
   isLoading,
+  onConversationCreated,
+  queryClient,
 }: {
   conversations: Conversation[];
   selectedConversationId: string | null;
@@ -171,10 +175,34 @@ function ConversationSidebar({
   currentUser: User | null;
   onClose?: () => void;
   isLoading?: boolean;
+  onConversationCreated: (id: string) => void;
+  queryClient: ReturnType<typeof useQueryClient>;
 }) {
   const filteredConversations = conversations.filter((conv) => {
     const otherUser = getOtherUser(conv, currentUser?.id || "");
     return otherUser.name.toLowerCase().includes(searchQuery.toLowerCase());
+  });
+
+  const hasConversationMatch =
+    filteredConversations.length > 0 || searchQuery === "";
+
+  // Search users only when no conversation matches
+  const { data: searchResults = [], isLoading: isSearchingUsers } = useQuery({
+    queryKey: ["users", "search", searchQuery],
+    queryFn: () => userApi.searchUsers(searchQuery).then((res) => res.data),
+    enabled: !hasConversationMatch && searchQuery.length > 0,
+  });
+
+  const createConversationMutation = useMutation({
+    mutationFn: (userId: string) =>
+      conversationApi.createConversation(userId).then((res) => res.data),
+    onSuccess: (conversation) => {
+      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      onConversationCreated(conversation.id);
+      onSearchChange("");
+      onClose?.();
+    },
+    onError: () => toast.error("Failed to start conversation"),
   });
 
   return (
@@ -189,7 +217,7 @@ function ConversationSidebar({
         <div className="relative">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search conversations..."
+            placeholder="Search or start new chat..."
             className="pl-9"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
@@ -197,78 +225,127 @@ function ConversationSidebar({
         </div>
       </div>
 
-      {/* Conversations List */}
+      {/* Conversations or User Search Results */}
       <ScrollArea className="flex-1">
         <div className="space-y-1 p-2">
-          {isLoading
-            ? Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-3 p-3">
-                  <Skeleton className="h-10 w-10 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-32" />
-                    <Skeleton className="h-3 w-48" />
-                  </div>
+          {isLoading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 p-3">
+                <Skeleton className="h-10 w-10 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-3 w-48" />
                 </div>
-              ))
-            : filteredConversations.map((conversation) => {
-                const otherUser = getOtherUser(
-                  conversation,
-                  currentUser?.id || "",
-                );
-                const unreadCount = getUnreadCount(
-                  conversation,
-                  currentUser?.id || "",
-                );
-                const lastMessage =
-                  conversation.messages[conversation.messages.length - 1];
-                const isSelected = selectedConversationId === conversation.id;
+              </div>
+            ))
+          ) : !hasConversationMatch ? (
+            <>
+              <p className="px-3 py-1 text-xs text-muted-foreground">
+                New conversation
+              </p>
 
-                return (
-                  <button
-                    key={conversation.id}
-                    onClick={() => {
-                      onSelectConversation(conversation.id);
-                      onClose?.();
-                    }}
-                    className={`w-full rounded-lg p-3 text-left transition-colors ${
-                      isSelected
-                        ? "bg-accent text-accent-foreground"
-                        : "hover:bg-muted text-foreground"
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <Avatar className="mt-1 h-10 w-10 flex-shrink-0">
-                        <AvatarImage src={otherUser.avatarUrl || ""} />
-                        <AvatarFallback>
-                          {getInitials(otherUser.name)}
-                        </AvatarFallback>
-                      </Avatar>
+              {isSearchingUsers &&
+                Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-3 p-3">
+                    <Skeleton className="h-10 w-10 rounded-full flex-shrink-0" />
+                    <div className="space-y-1 flex-1">
+                      <Skeleton className="h-4 w-24" />
+                      <Skeleton className="h-3 w-32" />
+                    </div>
+                  </div>
+                ))}
 
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="font-medium">{otherUser.name}</p>
-                          {unreadCount > 0 && (
-                            <Badge
-                              variant="default"
-                              className="ml-auto flex-shrink-0"
-                            >
-                              {unreadCount}
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="truncate text-sm text-muted-foreground">
-                          {lastMessage?.content || "No messages yet"}
-                        </p>
-                        {lastMessage && (
-                          <p className="text-xs text-muted-foreground">
-                            {formatTime(lastMessage.createdAt)}
-                          </p>
+              {!isSearchingUsers && searchResults.length === 0 && (
+                <p className="text-center text-sm text-muted-foreground py-4">
+                  No users found
+                </p>
+              )}
+
+              {searchResults.map((user: SearchUser) => (
+                <button
+                  key={user.id}
+                  onClick={() => createConversationMutation.mutate(user.id)}
+                  disabled={createConversationMutation.isPending}
+                  className="w-full flex items-center gap-3 rounded-lg p-3 hover:bg-muted text-left transition-colors"
+                >
+                  <Avatar className="h-10 w-10 flex-shrink-0">
+                    <AvatarImage src={user.avatarUrl || ""} />
+                    <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm text-foreground">
+                      {user.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {user.email}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </>
+          ) : (
+            filteredConversations.map((conversation) => {
+              const otherUser = getOtherUser(
+                conversation,
+                currentUser?.id || "",
+              );
+              const unreadCount = getUnreadCount(
+                conversation,
+                currentUser?.id || "",
+              );
+              const lastMessage =
+                conversation.messages[conversation.messages.length - 1];
+              const isSelected = selectedConversationId === conversation.id;
+
+              return (
+                <button
+                  key={conversation.id}
+                  onClick={() => {
+                    onSelectConversation(conversation.id);
+                    onClose?.();
+                  }}
+                  className={`w-full rounded-lg p-3 text-left transition-colors ${
+                    isSelected
+                      ? "bg-accent text-accent-foreground"
+                      : "hover:bg-muted text-foreground"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <Avatar className="mt-1 h-10 w-10 flex-shrink-0">
+                      <AvatarImage src={otherUser.avatarUrl || ""} />
+                      <AvatarFallback>
+                        {getInitials(otherUser.name)}
+                      </AvatarFallback>
+                    </Avatar>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-medium">{otherUser.name}</p>
+                        {unreadCount > 0 && (
+                          <Badge
+                            variant="default"
+                            className="ml-auto flex-shrink-0"
+                          >
+                            {unreadCount}
+                          </Badge>
                         )}
                       </div>
+                      <p className="truncate text-sm text-muted-foreground">
+                        {lastMessage?.isDeleted
+                          ? "This message was deleted"
+                          : lastMessage?.content || "No messages yet"}
+                      </p>
+                      {lastMessage && (
+                        <p className="text-xs text-muted-foreground">
+                          {formatTime(lastMessage.createdAt)}
+                        </p>
+                      )}
                     </div>
-                  </button>
-                );
-              })}
+                  </div>
+                </button>
+              );
+            })
+          )}
         </div>
       </ScrollArea>
     </div>
@@ -294,7 +371,10 @@ function MessageBubble({
   );
 
   return (
-    <div className={`flex gap-2 ${isOwn ? "flex-row-reverse" : "flex-row"}`}>
+    <div
+      data-message-id={message.id}
+      className={`flex gap-2 ${isOwn ? "flex-row-reverse" : "flex-row"}`}
+    >
       {!isOwn && (
         <Avatar className="mt-1 h-6 w-6 flex-shrink-0">
           <AvatarImage src={message.sender.avatarUrl || ""} />
@@ -434,63 +514,114 @@ export default function ChatPage() {
   });
 
   // flatten all pages into one array — now in correct oldest to newest order
-  const messages = data?.pages.flat() ?? [];
+  // const messages = data?.pages.flat();
+  console.log("CHAT RENDER");
+
+  const messages = useMemo(() => {
+    console.log("flat executed");
+
+    return data?.pages.flat() ?? [];
+  }, [data?.pages]);
+
+  // const messages = useMemo(()=>data?.pages.flat(),[data])
   // console.log(data, "data");
   // console.log(data?.pages, "pages ");
   // console.log(messages, "messages");
 
-  // Load more when top sentinel is in view
-  useEffect(() => {
-    if (!canLoadNextPage.current) return; // skip first load
-    if (topInView && hasNextPage && !isFetchingNextPage) {
-      // save scroll height before loading more so we can restore position
-      const scrollContainer = scrollAreaRef.current?.querySelector(
-        "[data-radix-scroll-area-viewport]",
-      );
+  // Reference to the first message element before fetching
+  const anchorMessageRef = useRef<{ id: string; top: number } | null>(null);
 
-      prevScrollHeightRef.current = scrollContainer?.scrollHeight ?? 0;
-      //                            e.g. 1200px
-      canLoadNextPage.current = false;
-      void fetchNextPage();
-    }
-  }, [topInView, hasNextPage, isFetchingNextPage, fetchNextPage]);
-  useEffect(() => {
-    canLoadNextPage.current = false;
-  }, [selectedConversationId]);
+  // Reset stale cache when conversation changes so we always fetch fresh
+  // useEffect(() => {
+  //   if (selectedConversationId) {
+  //     canLoadNextPage.current = false;
+  //     anchorMessageRef.current = null;
+  //     void queryClient.resetQueries({
+  //       queryKey: ["messages", selectedConversationId],
+  //     });
+  //   }
+  // }, [selectedConversationId, queryClient]);
 
-  useEffect(() => {
-    canLoadNextPage.current = true;
-  }, [data?.pages.length]);
+  // // Scroll to bottom on initial page load (pages.length goes from 0→1)
+  // useEffect(() => {
+  //   if (data?.pages.length !== 1) return;
+  //   const scrollContainer = scrollAreaRef.current?.querySelector(
+  //     "[data-radix-scroll-area-viewport]",
+  //   ) as HTMLElement | null;
+  //   if (!scrollContainer) return;
 
-  // Restore scroll position after new page loads
-  useEffect(() => {
-    const scrollContainer = scrollAreaRef.current?.querySelector(
-      "[data-radix-scroll-area-viewport]",
-    );
-    if (!scrollContainer) return;
+  //   scrollContainer.scrollTop = scrollContainer.scrollHeight;
+  //   // canLoadNextPage is re-armed by the topInView effect below
+  // }, [data?.pages.length]);
 
-    const newScrollHeight = scrollContainer.scrollHeight;
-    //                      e.g. 1800px (600px of new messages added)
+  // // Restore scroll position after an older page is prepended
+  // useLayoutEffect(() => {
+  //   if (!anchorMessageRef.current) return;
+  //   const scrollContainer = scrollAreaRef.current?.querySelector(
+  //     "[data-radix-scroll-area-viewport]",
+  //   ) as HTMLElement | null;
+  //   if (!scrollContainer) return;
 
-    const diff = newScrollHeight - prevScrollHeightRef.current;
-    //           1800 - 1200 = 600px  how much content was added at top
+  //   const anchorElement = scrollContainer.querySelector(
+  //     `[data-message-id="${anchorMessageRef.current.id}"]`,
+  //   );
 
-    // only restore position if we loaded a new page (not initial load)
-    if (diff > 0 && prevScrollHeightRef.current > 0) {
-      scrollContainer.scrollTop = diff;
-      //                          600px push view down by same amount content grew
-      prevScrollHeightRef.current = 0; // reset after restoring
-    }
-  }, [data?.pages.length]);
+  //   if (anchorElement) {
+  //     // Calculate the new absolute Y position of the anchor element relative to the scroll container's content.
+  //     const newOffset =
+  //       anchorElement.getBoundingClientRect().top -
+  //       scrollContainer.getBoundingClientRect().top +
+  //       scrollContainer.scrollTop;
 
-  // Reset infinite query when conversation changes
-  useEffect(() => {
-    if (selectedConversationId) {
-      void queryClient.resetQueries({
-        queryKey: ["messages", selectedConversationId],
-      });
-    }
-  }, [selectedConversationId, queryClient]);
+  //     const diff = newOffset - anchorMessageRef.current.top;
+
+  //     if (diff !== 0) {
+  //       scrollContainer.scrollTop += diff;
+  //     }
+  //   }
+
+  //   anchorMessageRef.current = null;
+  //   // canLoadNextPage is re-armed by the topInView effect below
+  // }, [data?.pages.length]);
+
+  // // Re-arm the load-more sentinel only after it has actually left the viewport.
+  // useEffect(() => {
+  //   if (!topInView && hasNextPage && !isFetchingNextPage) {
+  //     canLoadNextPage.current = true;
+  //   }
+  // }, [topInView, hasNextPage, isFetchingNextPage]);
+
+  // // Load more when top sentinel is in view
+  // useEffect(() => {
+  //   if (!canLoadNextPage.current) return;
+  //   if (!topInView || !hasNextPage || isFetchingNextPage) return;
+
+  //   const scrollContainer = scrollAreaRef.current?.querySelector(
+  //     "[data-radix-scroll-area-viewport]",
+  //   ) as HTMLElement | null;
+
+  //   // Find the very first message bubble currently rendered
+  //   const firstMessageElement =
+  //     scrollContainer?.querySelector("[data-message-id]");
+  //   if (firstMessageElement && scrollContainer) {
+  //     // Save the absolute Y position relative to the scroll container's content.
+  //     // This is completely immune to the user scrolling during the fetch!
+  //     const absoluteOffset =
+  //       firstMessageElement.getBoundingClientRect().top -
+  //       scrollContainer.getBoundingClientRect().top +
+  //       scrollContainer.scrollTop;
+
+  //     anchorMessageRef.current = {
+  //       id: firstMessageElement.getAttribute("data-message-id")!,
+  //       top: absoluteOffset,
+  //     };
+  //   } else {
+  //     anchorMessageRef.current = null;
+  //   }
+
+  //   canLoadNextPage.current = false; // disarm until new page resolves
+  //   void fetchNextPage();
+  // }, [topInView, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // Send message mutation
   const sendMessageMutation = useMutation({
@@ -587,6 +718,10 @@ export default function ChatPage() {
       console.log(err, "error");
       toast.error("Failed to send message");
     },
+    onSettled: () => {
+      isMessageSending.current = false;
+    }
+   
   });
 
   // Delete message mutation
@@ -618,48 +753,99 @@ export default function ChatPage() {
     },
   });
 
-  // Scroll to bottom on initial load or conversation change
-  useEffect(() => {
-    const scrollContainer = scrollAreaRef.current?.querySelector(
-      "[data-radix-scroll-area-viewport]",
-    );
-    if (!scrollContainer) return;
-    console.log(scrollContainer.scrollHeight, "scrollHeight on initial load");
-    console.log(scrollContainer.scrollTop, "scrollTop on initial load");
-
-    // only scroll to bottom on first page load or when conversation changes
-    if (data?.pages.length === 1) {
-      console.log("scrolling to bottom on initial load or conversation change");
-      // setTimeout(() => {
-      //   scrollContainer.scrollTop = scrollContainer.scrollHeight;
-      // }, 0);
-      scrollContainer.scrollTop = scrollContainer.scrollHeight;
-      canLoadNextPage.current = true;
-    }
-  }, [selectedConversationId, data?.pages.length]);
-
-  // Scroll to bottom when a new message is added (sent or received)
-  const lastMessage = messages[messages.length - 1];
+  // Scroll to bottom when a new message is sent or received
+  const lastMessage = messages?.[messages.length - 1];
   const lastMessageId = lastMessage?.id;
   const lastMessageSenderId = lastMessage?.senderId;
 
+  // useEffect(() => {
+  //   const scrollContainer = scrollAreaRef.current?.querySelector(
+  //     "[data-radix-scroll-area-viewport]",
+  //   );
+  //   if (!scrollContainer) return;
+
+  //   const isOwnMessage = lastMessageSenderId === user?.id;
+  //   const isNearBottom =
+  //     scrollContainer.scrollHeight -
+  //       scrollContainer.scrollTop -
+  //       scrollContainer.clientHeight <
+  //     150;
+
+  //   if (isOwnMessage || isNearBottom) {
+  //     scrollContainer.scrollTop = scrollContainer.scrollHeight;
+  //   }
+  // }, [lastMessageId, lastMessageSenderId, user?.id]);
+
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const useEffectRanRef = useRef<number>(0);
+  const isMessageSending = useRef(false);
+    const handleSendMessage = () => {
+    if (!messageInput.trim() || !selectedConversationId) return;
+    sendMessageMutation.mutate(messageInput);
+    isMessageSending.current = true;
+    bottomRef.current?.scrollIntoView({ behavior: "auto" });
+    console.log("scrolled to bottom");
+    setMessageInput("");
+  };
+
   useEffect(() => {
+    useEffectRanRef.current += 1;
+    // console.log("conversation", selectedConversationId);
+    // console.log("messages", messages.length);
+    // console.log("container", scrollAreaRef.current);
+    // console.log("bottom", bottomRef.current);
+    console.log("first use effect ran count", useEffectRanRef.current);
+
     const scrollContainer = scrollAreaRef.current?.querySelector(
       "[data-radix-scroll-area-viewport]",
     );
-    if (!scrollContainer) return;
+    // if (!scrollContainer) return;
 
-    const isOwnMessage = lastMessageSenderId === user?.id;
-    const isNearBottom =
-      scrollContainer.scrollHeight -
-        scrollContainer.scrollTop -
-        scrollContainer.clientHeight <
-      150;
-
-    if (isOwnMessage || isNearBottom) {
-      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    console.log(scrollContainer?.scrollHeight, "scrollContainer.scrollHeight from first use effect");
+    console.log(scrollContainer?.scrollTop, "scrollContainer.scrollTop from first use effect");
+    console.log(prevScrollHeightRef.current, "prevscroll height ref from first use effect before if")
+    if (messages.length > 30 && !isMessageSending.current) {
+      const diff = scrollContainer?.scrollHeight - prevScrollHeightRef.current;
+      console.log(diff, "diff");
+      if (diff > 0) {
+        console.log("scrolling to diff", diff);
+        scrollContainer.scrollTop = diff;
+      } else {
+        console.log("scrolling to bottomRef");
+        bottomRef.current?.scrollIntoView({ behavior: "auto" });
+      }
     }
-  }, [lastMessageId, lastMessageSenderId, user?.id]);
+    if (messages.length < 31 || isMessageSending.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "auto" });
+    }
+    prevScrollHeightRef.current = scrollContainer?.scrollHeight;
+    console.log(prevScrollHeightRef.current, "prevScrollHeightRef from first use effect");
+  }, [messages]);
+
+  useEffect(() => {
+    console.log("second use effect ran");
+    console.log(topInView, "topInView");
+    if (topInView && hasNextPage && !isFetchingNextPage) {
+      console.log("fetching next page")
+      fetchNextPage();
+    }
+  }, [topInView]);
+
+  useEffect(() => {
+    console.log("third use effect ran");
+    console.log("selected conversation id", selectedConversationId);
+    const scrollContainer = scrollAreaRef.current?.querySelector(
+      "[data-radix-scroll-area-viewport]",
+    );
+    if (bottomRef.current && selectedConversationId) {
+      console.log("scrolling to bottomRef from third use effect");
+      bottomRef.current.scrollIntoView({ behavior: "auto" });
+    }
+    if (scrollContainer) {
+      prevScrollHeightRef.current = scrollContainer.scrollHeight;
+      console.log(prevScrollHeightRef.current, "prevScrollHeightRef from third use effect");
+    }
+  }, [selectedConversationId]);
 
   const selectedConversation = conversations.find(
     (c) => c.id === selectedConversationId,
@@ -669,7 +855,7 @@ export default function ChatPage() {
     : null;
 
   // Group messages by date
-  const groupedMessages = messages.reduce(
+  const groupedMessages = messages?.reduce(
     (groups, message) => {
       const date = formatDate(message.createdAt);
       if (!groups[date]) {
@@ -681,11 +867,7 @@ export default function ChatPage() {
     {} as Record<string, Message[]>,
   );
 
-  const handleSendMessage = () => {
-    if (!messageInput.trim() || !selectedConversationId) return;
-    sendMessageMutation.mutate(messageInput);
-    setMessageInput("");
-  };
+
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -715,6 +897,8 @@ export default function ChatPage() {
             onSearchChange={setSearchQuery}
             currentUser={user}
             isLoading={conversationsLoading}
+            onConversationCreated={(id) => setSelectedConversationId(id)}
+            queryClient={queryClient}
           />
         </div>
 
@@ -738,6 +922,8 @@ export default function ChatPage() {
                   currentUser={user}
                   onClose={() => setMobileOpen(false)}
                   isLoading={conversationsLoading}
+                  onConversationCreated={(id) => setSelectedConversationId(id)}
+                  queryClient={queryClient}
                 />
               </SheetContent>
             </Sheet>
@@ -874,6 +1060,7 @@ export default function ChatPage() {
                     ))}
                   </div>
                 )}
+                <div ref={bottomRef} className="h-0" />
               </ScrollArea>
 
               {/* Input Area */}

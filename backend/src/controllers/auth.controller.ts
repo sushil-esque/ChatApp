@@ -1,7 +1,7 @@
 import crypto from "crypto";
 
 import { prisma } from "../db/prisma";
-import { loginDto, otpDto, registerDto } from "../dtos/auth.dto";
+import { loginDto, otpDto, registerDto, resendOtpDto } from "../dtos/auth.dto";
 import { CustomError } from "../errors/customError";
 import { asyncHandler } from "../middlewares/asyncHandler";
 import * as authService from "../services/auth.service";
@@ -100,4 +100,11 @@ export const logoutAll = asyncHandler(async (req, res) => {
   });
 
   res.status(200).json({ message: "Logged out from all devices" });
+});
+
+export const resendOtp = asyncHandler(async (req, res) => {
+  const parsed = resendOtpDto.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ details: parsed.error.issues, error: "Invalid Payload" });
+  await authService.resendOtp(parsed.data.email);
+  res.status(200).json({ message: "OTP resent successfully" });
 });

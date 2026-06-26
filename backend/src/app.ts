@@ -5,7 +5,10 @@ import cors from "cors";
 import { errorHandler } from "./middlewares/errorHandler";
 import authRouter from "./routes/auth.routes";
 import conversationRouter from "./routes/conversation.routes.js";
+import userRouter from "./routes/user.routes.js";
+import morgan from "morgan";
 const app = express();
+app.use(morgan("dev"));
 app.use(
   cors({
     origin: "http://localhost:5173",
@@ -20,5 +23,6 @@ app.use(cookieParser());
 
 app.use("/api/auth", authRouter);
 app.use("/api/conversations", conversationRouter);
+app.use("/api/users", userRouter);
 app.use(errorHandler);
 export default app;
