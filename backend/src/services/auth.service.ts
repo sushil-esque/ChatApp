@@ -8,11 +8,11 @@ import { generateOtp, hashOtp } from "../utils/otp.js";
 
 export async function login(email: string, password: string, deviceName?: string, ipAddress?: string) {
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) throw new CustomError("Invalid Credentials", 404);
+  if (!user) throw new CustomError("Invalid Credentials", 401, 'INVALID_CREDENTIALS');
   const hashedPassword = user.passwordHash;
   const isPasswordMatch = await bcrypt.compare(password, hashedPassword);
-  if (!isPasswordMatch) throw new CustomError("Invalid Credentials", 404);
-  if (!user.verified) throw new CustomError("Email not verified", 403);
+  if (!isPasswordMatch) throw new CustomError("Invalid Credentials", 401, 'INVALID_CREDENTIALS');
+  if (!user.verified) throw new CustomError("Email not verified", 403, 'EMAIL_NOT_VERIFIED');
   const { accessToken, refreshToken } = await createSession(user.id, deviceName, ipAddress);
   return { accessToken, refreshToken, user: sanitizeUser(user) };
 }
@@ -37,7 +37,7 @@ export async function register(name: string, email: string, password: string) {
     },
   });
   if (isAlreadyRegistered) {
-    throw new CustomError("User already exists", 409);
+    throw new CustomError("User already exists", 409, 'USER_ALREADY_EXISTS');
   }
   const passwordHash = await bcrypt.hash(password, 10);
   const otp = generateOtp();
@@ -86,6 +86,30 @@ export async function sendOtp(userId: string) {
 
   // send otp via email
   console.log(`OTP for ${userId}: ${otp}`);
+}
+
+export async function resendOtp(email: string) {
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) throw new CustomError("User not found", 404);
+  if (user.verified) throw new CustomError("User already verified", 400);
+
+  const otp = generateOtp();
+  const otpHash = await hashOtp(otp);
+
+  await prisma.otp.upsert({
+    create: {
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      otpHash,
+      userId: user.id,
+    },
+    update: {
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      otpHash,
+    },
+    where: { userId: user.id },
+  });
+
+  console.log(`Resent OTP for ${user.id}: ${otp}`);
 }
 
 export async function verifyEmail(email: string, inputOtp: string, deviceName?: string, ipAddress?: string) {

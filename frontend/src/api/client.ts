@@ -29,10 +29,11 @@ api.interceptors.response.use(
     const originalRequest = error.config;
     // skip refresh logic if the failing request IS the refresh endpoint
     if (originalRequest.url?.includes("/auth/refresh")) {
+      console.log('refresh request failed', error?.response);
       return Promise.reject(error.response || error);
     }
     // if access token expired and we haven't already retried
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (error.response?.status === 401 && error.response?.data?.code === 'TOKEN_EXPIRED' && !originalRequest._retry) {
       originalRequest._retry = true; // a guard for an infinite loop that could be caused by 401
       try {
         // call refresh endpoint — browser sends refreshToken cookie automatically
@@ -53,7 +54,7 @@ api.interceptors.response.use(
       }
     }
 
-    return Promise.reject(error.response || error);
+    return Promise.reject(error);
   },
 );
 

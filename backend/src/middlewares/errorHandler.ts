@@ -6,7 +6,7 @@ import { CustomError } from "../errors/customError";
 export const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => {
   console.error(err.stack);
   if (err instanceof CustomError) {
-    return res.status(err.status).json({ error: err.message });
+    return res.status(err.status).json({ error: err.message, code: err.code });
   }
 
   if (err instanceof jwt.TokenExpiredError) {

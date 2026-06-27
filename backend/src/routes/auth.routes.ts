@@ -8,6 +8,8 @@ authRouter.post("/register", authController.register);
 
 authRouter.post("/verifyEmail", authController.verifyEmail);
 
+authRouter.post("/resend-otp", authController.resendOtp);
+
 authRouter.get("/refresh", authController.refresh);
 
 authRouter.post("/login", authController.login);

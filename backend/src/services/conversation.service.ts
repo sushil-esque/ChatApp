@@ -40,7 +40,7 @@ export async function getConversations(userId: string) {
         { userBId: userId },
       ],
     },
-    orderBy: { lastMessageAt: "desc" },
+    orderBy: { lastMessageAt: {sort:"desc",nulls:"last"} },
     include: {
       userA: { select: { id: true, name: true, avatarUrl: true } },
       userB: { select: { id: true, name: true, avatarUrl: true } },
