@@ -12,46 +12,53 @@ import Home from "./pages/Home";
 import { useInitAuth } from "./hooks/useInitAuth";
 import { useAuthStore } from "./store/authStore";
 import { PublicRoute } from "./components/PublicRoute";
+import { useSocket } from "./hooks/useSocket";
 
 const queryClient = new QueryClient();
 
-function App() {
-  useInitAuth(); // runs once on mount
+function AppInner() {
+  useInitAuth()
+  useSocket()
 
-  const isLoading = useAuthStore((state) => state.isLoading);
+  const isLoading = useAuthStore((state) => state.isLoading)
 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p>Loading...</p>
       </div>
-    );
+    )
   }
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route element={<PublicRoute />}>
+          <Route element={<AuthLayout />}>
+            <Route path="/" element={<Home />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
+          </Route>
+        </Route>
+        <Route element={<ProtectedRoute />}>
+          <Route element={<AppLayout />}>
+            <Route path="/chat" element={<Chat />} />
+            <Route path="/chat/:conversationId" element={<Chat />} />
+          </Route>
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  )
+}
+
+function App() {
+  
   return (
     <>
       <Toaster theme="dark" />
       <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <Routes>
-            {/* public routes */}
-            <Route element={<PublicRoute />}>
-              <Route element={<AuthLayout />}>
-                <Route path="/" element={<Home />} />
-                <Route path="/login" element={<Login />} />
-                <Route path="/register" element={<Register />} />
-                <Route path="/verify-email" element={<VerifyEmail />} />
-              </Route>
-            </Route>
-
-            {/* protected routes */}
-            <Route element={<ProtectedRoute />}>
-              <Route element={<AppLayout />}>
-                <Route path="/chat" element={<Chat />} />
-                <Route path="/chat/:conversationId" element={<Chat />} />
-              </Route>
-            </Route>
-          </Routes>
-        </BrowserRouter>
+       <AppInner />
       </QueryClientProvider>
     </>
   );

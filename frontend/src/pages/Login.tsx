@@ -24,6 +24,7 @@ import {
   FieldError,
 } from "@/components/ui/field";
 import type { AxiosError } from "axios";
+import { initSocket } from "@/services/socket";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -43,6 +44,7 @@ export function LoginPage() {
       console.log(data);
       setAccessToken(data.data.accessToken);
       setUser(data.data.user);
+      initSocket(data.data.accessToken);
       navigate("/chat");
     },
     onError: (error: AxiosError<{ error: string; code: string }>) => {

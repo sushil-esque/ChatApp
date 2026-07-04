@@ -51,26 +51,30 @@ export async function getMessages(conversationId: string, userId: string, cursor
 
   const isUserA = conversation.userAId === userId;
   const recipientLastReadAt = isUserA ? conversation.userBLastReadAt : conversation.userALastReadAt;
-  const [messages] = await prisma.$transaction([
-    prisma.message.findMany({
-      where: { conversationId, isDeleted: false },
-      orderBy: { createdAt: "desc" },
-      take: 30,
-      ...(cursor && { cursor: { id: cursor }, skip: 1 }),
-      include: {
-        sender: { select: { id: true, name: true, avatarUrl: true } },
+
+  // Run findMany directly — no transaction needed for a read-only query.
+  // Wrapping reads in $transaction holds a dedicated DB connection for the full
+  // query duration, which exhausts the pool under concurrent load.
+  const messages = await prisma.message.findMany({
+    where: { conversationId, isDeleted: false },
+    orderBy: { createdAt: "desc" },
+    take: 30,
+    ...(cursor && { cursor: { id: cursor }, skip: 1 }),
+    include: {
+      sender: { select: { id: true, name: true, avatarUrl: true } },
+    },
+  });
+
+  // Mark conversation as read on first page load (fire-and-forget, non-blocking).
+  if (!cursor) {
+    void prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        userALastReadAt: isUserA ? new Date() : undefined,
+        userBLastReadAt: isUserA ? undefined : new Date(),
       },
-    }),
-    ...(!cursor ? [
-      prisma.conversation.update({
-        where: { id: conversationId },
-        data: {
-          userALastReadAt: isUserA ? new Date() : undefined,
-          userBLastReadAt: isUserA ? undefined : new Date(),
-        },
-      })
-    ] : [])
-  ]);
+    });
+  }
 
   return messages.map((message) => {
     let isReadAt = false;
