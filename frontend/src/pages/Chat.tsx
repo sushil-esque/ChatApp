@@ -1,21 +1,34 @@
-import { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
-import { useInView } from "react-intersection-observer";
 import {
-  Menu,
-  Send,
-  MoreVertical,
   ArrowLeft,
-  Search,
   LogOut,
+  Menu,
+  MoreVertical,
+  Search,
+  Send,
   Trash2,
 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useInView } from "react-intersection-observer";
+import { useNavigate } from "react-router-dom";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { authApi } from "@/api/auth";
+import { setAccessToken } from "@/api/client";
+import { conversationApi } from "@/api/conversation";
+import type { SearchUser } from "@/api/user";
+import { userApi } from "@/api/user";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip,
@@ -23,27 +36,15 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Separator } from "@/components/ui/separator";
-import {
-  useQuery,
-  useMutation,
-  useQueryClient,
-  useInfiniteQuery,
-} from "@tanstack/react-query";
-import { authApi } from "@/api/auth";
-import { conversationApi } from "@/api/conversation";
-import { userApi } from "@/api/user";
-import type { SearchUser } from "@/api/user";
-import { setAccessToken } from "@/api/client";
-import { toast } from "sonner";
+import { getSocket } from "@/services/socket";
 import { useAuthStore } from "@/store/authStore";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { toast } from "sonner";
 
 // Types
 interface User {
@@ -445,17 +446,20 @@ export default function ChatPage() {
   const [messageInput, setMessageInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
+  // messages that arrived via socket — kept separate to avoid mutating the infinite query cache
+  // (mutating the cache would corrupt pageParams and break pagination)
+  const [socketMessages, setSocketMessages] = useState<Message[]>([]);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   // Intersection observer refs for infinite scroll
   const { ref: topRef, inView: topInView } = useInView();
   const prevScrollHeightRef = useRef<number>(0);
-  const canLoadNextPage = useRef(false);
   // Fetch conversations
   const { data: conversations = [], isLoading: conversationsLoading } =
     useQuery({
       queryKey: ["conversations"],
       queryFn: () => conversationApi.getConversations().then((res) => res.data),
+      enabled: !!user, // only fetch when user is set (token is ready)
     });
 
   // Set first conversation as selected on load
@@ -464,6 +468,23 @@ export default function ChatPage() {
       setSelectedConversationId(conversations[0].id);
     }
   }, [conversations, selectedConversationId]);
+
+  // join/leave conversation room amd emit message:seen when selected conversation changes
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket || !selectedConversationId) return;
+
+    socket.emit("join:conversation", selectedConversationId);
+    socket.emit("messages:read", { conversationId: selectedConversationId });
+    return () => {
+      socket.emit("leave:conversation", selectedConversationId);
+    };
+  }, [selectedConversationId]);
+
+  // Clear socket messages whenever the user switches conversations
+  useEffect(() => {
+    setSocketMessages([]);
+  }, [selectedConversationId]);
 
   // Fetch messages for selected conversation with infinite scroll
   const {
@@ -491,7 +512,7 @@ export default function ChatPage() {
       // cursor is the last item (oldest message in this batch since api returns desc)
       return lastPage[lastPage.length - 1]?.id;
     },
-    enabled: !!selectedConversationId,
+    enabled: !!selectedConversationId && !!user, // only fetch when user is set (token is ready)
     select: (data) => ({
       ...data,
       // reverse page order so older pages appear first
@@ -519,109 +540,34 @@ export default function ChatPage() {
 
   const messages = useMemo(() => {
     console.log("flat executed");
+    const infiniteMessages = data?.pages.flat() ?? [];
+    const infiniteIds = new Set(infiniteMessages.map((m) => m.id));
 
-    return data?.pages.flat() ?? [];
-  }, [data?.pages]);
+    // Merge: infinite query messages (historical) + socket messages (real-time)
+    // Filter socket messages so we only show ones for the current conversation
+    // and exclude any already present in the infinite query (dedup).
+    const extraSocketMessages = socketMessages.filter(
+      (m) =>
+        m.conversationId === selectedConversationId && !infiniteIds.has(m.id),
+    );
 
-  // const messages = useMemo(()=>data?.pages.flat(),[data])
-  // console.log(data, "data");
-  // console.log(data?.pages, "pages ");
-  // console.log(messages, "messages");
+    return [...infiniteMessages, ...extraSocketMessages];
+    // return [...infiniteMessages, ...socketMessages];
+  }, [data?.pages, socketMessages, selectedConversationId]);
+  const lastMessage = messages[messages.length - 1];
+  const lastMessageId = lastMessage?.id;
+  const lastMessageSenderId = lastMessage?.senderId;
 
-  // Reference to the first message element before fetching
-  const anchorMessageRef = useRef<{ id: string; top: number } | null>(null);
+  // emit read when new message arrives and it's from the other user
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket || !selectedConversationId) return;
+    if (!lastMessageId) return;
 
-  // Reset stale cache when conversation changes so we always fetch fresh
-  // useEffect(() => {
-  //   if (selectedConversationId) {
-  //     canLoadNextPage.current = false;
-  //     anchorMessageRef.current = null;
-  //     void queryClient.resetQueries({
-  //       queryKey: ["messages", selectedConversationId],
-  //     });
-  //   }
-  // }, [selectedConversationId, queryClient]);
-
-  // // Scroll to bottom on initial page load (pages.length goes from 0→1)
-  // useEffect(() => {
-  //   if (data?.pages.length !== 1) return;
-  //   const scrollContainer = scrollAreaRef.current?.querySelector(
-  //     "[data-radix-scroll-area-viewport]",
-  //   ) as HTMLElement | null;
-  //   if (!scrollContainer) return;
-
-  //   scrollContainer.scrollTop = scrollContainer.scrollHeight;
-  //   // canLoadNextPage is re-armed by the topInView effect below
-  // }, [data?.pages.length]);
-
-  // // Restore scroll position after an older page is prepended
-  // useLayoutEffect(() => {
-  //   if (!anchorMessageRef.current) return;
-  //   const scrollContainer = scrollAreaRef.current?.querySelector(
-  //     "[data-radix-scroll-area-viewport]",
-  //   ) as HTMLElement | null;
-  //   if (!scrollContainer) return;
-
-  //   const anchorElement = scrollContainer.querySelector(
-  //     `[data-message-id="${anchorMessageRef.current.id}"]`,
-  //   );
-
-  //   if (anchorElement) {
-  //     // Calculate the new absolute Y position of the anchor element relative to the scroll container's content.
-  //     const newOffset =
-  //       anchorElement.getBoundingClientRect().top -
-  //       scrollContainer.getBoundingClientRect().top +
-  //       scrollContainer.scrollTop;
-
-  //     const diff = newOffset - anchorMessageRef.current.top;
-
-  //     if (diff !== 0) {
-  //       scrollContainer.scrollTop += diff;
-  //     }
-  //   }
-
-  //   anchorMessageRef.current = null;
-  //   // canLoadNextPage is re-armed by the topInView effect below
-  // }, [data?.pages.length]);
-
-  // // Re-arm the load-more sentinel only after it has actually left the viewport.
-  // useEffect(() => {
-  //   if (!topInView && hasNextPage && !isFetchingNextPage) {
-  //     canLoadNextPage.current = true;
-  //   }
-  // }, [topInView, hasNextPage, isFetchingNextPage]);
-
-  // // Load more when top sentinel is in view
-  // useEffect(() => {
-  //   if (!canLoadNextPage.current) return;
-  //   if (!topInView || !hasNextPage || isFetchingNextPage) return;
-
-  //   const scrollContainer = scrollAreaRef.current?.querySelector(
-  //     "[data-radix-scroll-area-viewport]",
-  //   ) as HTMLElement | null;
-
-  //   // Find the very first message bubble currently rendered
-  //   const firstMessageElement =
-  //     scrollContainer?.querySelector("[data-message-id]");
-  //   if (firstMessageElement && scrollContainer) {
-  //     // Save the absolute Y position relative to the scroll container's content.
-  //     // This is completely immune to the user scrolling during the fetch!
-  //     const absoluteOffset =
-  //       firstMessageElement.getBoundingClientRect().top -
-  //       scrollContainer.getBoundingClientRect().top +
-  //       scrollContainer.scrollTop;
-
-  //     anchorMessageRef.current = {
-  //       id: firstMessageElement.getAttribute("data-message-id")!,
-  //       top: absoluteOffset,
-  //     };
-  //   } else {
-  //     anchorMessageRef.current = null;
-  //   }
-
-  //   canLoadNextPage.current = false; // disarm until new page resolves
-  //   void fetchNextPage();
-  // }, [topInView, hasNextPage, isFetchingNextPage, fetchNextPage]);
+    if (lastMessageSenderId !== user?.id) {
+      socket.emit("messages:read", { conversationId: selectedConversationId });
+    }
+  }, [lastMessageId, lastMessageSenderId, selectedConversationId, user?.id]);
 
   // Send message mutation
   const sendMessageMutation = useMutation({
@@ -720,8 +666,8 @@ export default function ChatPage() {
     },
     onSettled: () => {
       isMessageSending.current = false;
-    }
-   
+      console.log("message sent", isMessageSending.current);
+    },
   });
 
   // Delete message mutation
@@ -753,40 +699,130 @@ export default function ChatPage() {
     },
   });
 
-  // Scroll to bottom when a new message is sent or received
-  const lastMessage = messages?.[messages.length - 1];
-  const lastMessageId = lastMessage?.id;
-  const lastMessageSenderId = lastMessage?.senderId;
-
-  // useEffect(() => {
-  //   const scrollContainer = scrollAreaRef.current?.querySelector(
-  //     "[data-radix-scroll-area-viewport]",
-  //   );
-  //   if (!scrollContainer) return;
-
-  //   const isOwnMessage = lastMessageSenderId === user?.id;
-  //   const isNearBottom =
-  //     scrollContainer.scrollHeight -
-  //       scrollContainer.scrollTop -
-  //       scrollContainer.clientHeight <
-  //     150;
-
-  //   if (isOwnMessage || isNearBottom) {
-  //     scrollContainer.scrollTop = scrollContainer.scrollHeight;
-  //   }
-  // }, [lastMessageId, lastMessageSenderId, user?.id]);
-
   const bottomRef = useRef<HTMLDivElement>(null);
   const useEffectRanRef = useRef<number>(0);
   const isMessageSending = useRef(false);
-    const handleSendMessage = () => {
+
+  const handleSendMessage = () => {
     if (!messageInput.trim() || !selectedConversationId) return;
-    sendMessageMutation.mutate(messageInput);
+
+    const socket = getSocket();
+    const content = messageInput;
     isMessageSending.current = true;
     bottomRef.current?.scrollIntoView({ behavior: "auto" });
     console.log("scrolled to bottom");
     setMessageInput("");
+    if (socket?.connected) {
+      // Optimistic update — add the temp message to socketMessages immediately
+      // so the sender sees instant feedback without waiting for the server round-trip.
+      const optimisticMessage: Message = {
+        id: `temp-${Date.now()}`,
+        conversationId: selectedConversationId,
+        senderId: user!.id,
+        content,
+        isDeleted: false,
+        createdAt: new Date().toISOString(),
+        read: false,
+        sender: {
+          id: user!.id,
+          name: user!.name,
+          avatarUrl: user!.avatarUrl,
+        },
+      };
+      setSocketMessages((prev) => [...prev, optimisticMessage]);
+      // emit to server
+      socket.emit("message:send", {
+        conversationId: selectedConversationId,
+        content,
+      });
+      console.log("message emmited");
+    } else {
+      // fallback to REST if socket not connected
+      sendMessageMutation.mutate(content);
+      console.log("fallback to rest");
+    }
   };
+
+  const messageCameFromSocket = useRef(false);
+  // listen for incoming messages
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    socket.on("message:received", (message: Message) => {
+      isMessageSending.current = false;
+      console.log(isMessageSending.current, "isMessageSending after received");
+      if (message.senderId === user?.id) {
+        // Our own message came back confirmed from the server.
+        // Remove the temp-* optimistic entry and add the real message in its place.
+        setSocketMessages((prev) => [
+          ...prev.filter((m) => !m.id.startsWith("temp-")),
+          message,
+        ]);
+        console.log("message received");
+
+        void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+        return;
+      }
+
+      // Someone else's message — add to socketMessages, deduped.
+      // We deliberately do NOT touch the infinite query cache so that
+      // pageParams stay intact and pagination keeps working.
+      setSocketMessages((prev) => {
+        messageCameFromSocket.current = true;
+
+        const exists = prev.some((m) => m.id === message.id);
+        if (exists) return prev;
+        return [...prev, message];
+      });
+
+      // update conversation list (last message preview + unread count)
+      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    });
+
+    socket.on(
+      "messages:seen",
+      (data: { conversationId: string; seenBy: string; seenAt: string }) => {
+        // update messages in cache — mark all messages as read
+        queryClient.setQueryData(
+          ["messages", data.conversationId],
+          (old: { pages: Message[][]; pageParams: unknown[] } | undefined) => {
+            if (!old) return old;
+            return {
+              ...old,
+              pages: old.pages.map((page) =>
+                page.map((message) => ({
+                  ...message,
+                  read: message.senderId === user?.id ? true : message.read,
+                })),
+              ),
+            };
+          },
+        );
+
+        // also update socket messages
+        setSocketMessages((prev) =>
+          prev.map((message) => ({
+            ...message,
+            read: message.senderId === user?.id ? true : message.read,
+          })),
+        );
+      },
+    );
+
+    socket.on("message:error", (data: { error: string }) => {
+      isMessageSending.current = false;
+       // no correlation id in the payload, so drop any pending optimistic entries
+      setSocketMessages((prev) => prev.filter((m) => !m.id.startsWith("temp-")));
+      toast.error(data.error);
+    });
+
+    return () => {
+      socket.off("message:received");
+      socket.off("messages:seen");
+      socket.off("message:error");
+    };
+  }, [queryClient, user?.id]);
 
   useEffect(() => {
     useEffectRanRef.current += 1;
@@ -801,13 +837,25 @@ export default function ChatPage() {
     );
     // if (!scrollContainer) return;
 
-    console.log(scrollContainer?.scrollHeight, "scrollContainer.scrollHeight from first use effect");
-    console.log(scrollContainer?.scrollTop, "scrollContainer.scrollTop from first use effect");
-    console.log(prevScrollHeightRef.current, "prevscroll height ref from first use effect before if")
+    console.log(
+      scrollContainer?.scrollHeight,
+      "scrollContainer.scrollHeight from first use effect",
+    );
+    console.log(
+      scrollContainer?.scrollTop,
+      "scrollContainer.scrollTop from first use effect",
+    );
+    console.log(
+      prevScrollHeightRef.current,
+      "prevscroll height ref from first use effect before if",
+    );
+    console.log(messages.length, "length of messages");
+    console.log(isMessageSending.current, "isMessageSending");
+
     if (messages.length > 30 && !isMessageSending.current) {
       const diff = scrollContainer?.scrollHeight - prevScrollHeightRef.current;
       console.log(diff, "diff");
-      if (diff > 0) {
+      if (diff > 0 && !messageCameFromSocket.current) {
         console.log("scrolling to diff", diff);
         scrollContainer.scrollTop = diff;
       } else {
@@ -816,17 +864,24 @@ export default function ChatPage() {
       }
     }
     if (messages.length < 31 || isMessageSending.current) {
+      console.log("scrolling to bottomRef for < 31 or when sending");
       bottomRef.current?.scrollIntoView({ behavior: "auto" });
     }
+
+    // bottomRef.current?.scrollIntoView({ behavior: "auto" });
     prevScrollHeightRef.current = scrollContainer?.scrollHeight;
-    console.log(prevScrollHeightRef.current, "prevScrollHeightRef from first use effect");
+    console.log(
+      prevScrollHeightRef.current,
+      "prevScrollHeightRef from first use effect",
+    );
+    messageCameFromSocket.current = false;
   }, [messages]);
 
   useEffect(() => {
     console.log("second use effect ran");
     console.log(topInView, "topInView");
     if (topInView && hasNextPage && !isFetchingNextPage) {
-      console.log("fetching next page")
+      console.log("fetching next page");
       fetchNextPage();
     }
   }, [topInView]);
@@ -843,7 +898,10 @@ export default function ChatPage() {
     }
     if (scrollContainer) {
       prevScrollHeightRef.current = scrollContainer.scrollHeight;
-      console.log(prevScrollHeightRef.current, "prevScrollHeightRef from third use effect");
+      console.log(
+        prevScrollHeightRef.current,
+        "prevScrollHeightRef from third use effect",
+      );
     }
   }, [selectedConversationId]);
 
@@ -866,8 +924,6 @@ export default function ChatPage() {
     },
     {} as Record<string, Message[]>,
   );
-
-
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {

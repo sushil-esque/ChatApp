@@ -10,14 +10,22 @@ interface RefreshTokenPayload extends JwtPayload {
 }
 
 // Validate JWT secrets at module initialization so misconfiguration fails fast
-const JWT_SECRET = process.env.JWT_SECRET ?? (() => { throw new Error("Missing required JWT configuration: JWT_SECRET must be set in the environment."); })();
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET ?? (() => { throw new Error("Missing required JWT configuration: JWT_REFRESH_SECRET must be set in the environment."); })();
+const JWT_SECRET =
+  process.env.JWT_SECRET ??
+  (() => {
+    throw new Error("Missing required JWT configuration: JWT_SECRET must be set in the environment.");
+  })();
+const JWT_REFRESH_SECRET =
+  process.env.JWT_REFRESH_SECRET ??
+  (() => {
+    throw new Error("Missing required JWT configuration: JWT_REFRESH_SECRET must be set in the environment.");
+  })();
 
 export function generateAccessToken(userId: string, sessionId: string): string {
-  return jwt.sign({ sessionId, userId }, JWT_SECRET, { expiresIn: "1d" });
+  return jwt.sign({ sessionId, userId }, JWT_SECRET, { expiresIn: "15m" });
 }
 
-export function generateRefreshToken(userId: string): string {  
+export function generateRefreshToken(userId: string): string {
   return jwt.sign({ userId }, JWT_REFRESH_SECRET, { expiresIn: "30d" });
 }
 

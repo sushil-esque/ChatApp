@@ -61,8 +61,7 @@ export function VerifyEmailPage() {
     },
     onError: (error: { data?: { error?: string } }) => {
       const errorMessage =
-        error.data?.error ||
-        "Verification failed. Please try again.";
+        error.data?.error || "Verification failed. Please try again.";
       toast.error(errorMessage);
     },
   });
