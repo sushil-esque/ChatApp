@@ -21,7 +21,6 @@ import {
   verifyEmailSchema,
   type VerifyEmailForm,
 } from "@/lib/validations/auth";
-import { initSocket } from "@/services/socket";
 import { useAuthStore } from "@/store/authStore";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
@@ -58,13 +57,11 @@ export function VerifyEmailPage() {
       setAccessToken(data.data.accessToken);
       setUser(data.data.user);
       toast.success("Email verified successfully");
-      initSocket(data.data.accessToken);
       navigate("/chat");
     },
     onError: (error: { data?: { error?: string } }) => {
       const errorMessage =
-        error.data?.error ||
-        "Verification failed. Please try again.";
+        error.data?.error || "Verification failed. Please try again.";
       toast.error(errorMessage);
     },
   });

@@ -67,13 +67,17 @@ export async function getMessages(conversationId: string, userId: string, cursor
 
   // Mark conversation as read on first page load (fire-and-forget, non-blocking).
   if (!cursor) {
-    void prisma.conversation.update({
-      where: { id: conversationId },
-      data: {
-        userALastReadAt: isUserA ? new Date() : undefined,
-        userBLastReadAt: isUserA ? undefined : new Date(),
-      },
-    });
+    void prisma.conversation
+      .update({
+        where: { id: conversationId },
+        data: {
+          userALastReadAt: isUserA ? new Date() : undefined,
+          userBLastReadAt: isUserA ? undefined : new Date(),
+        },
+      })
+      .catch((err: unknown) => {
+        console.error("Error marking conversation as read:", err);
+      });
   }
 
   return messages.map((message) => {

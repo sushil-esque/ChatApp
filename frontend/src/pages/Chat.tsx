@@ -1,21 +1,34 @@
-import { useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
-import { useInView } from "react-intersection-observer";
 import {
-  Menu,
-  Send,
-  MoreVertical,
   ArrowLeft,
-  Search,
   LogOut,
+  Menu,
+  MoreVertical,
+  Search,
+  Send,
   Trash2,
 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useInView } from "react-intersection-observer";
+import { useNavigate } from "react-router-dom";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { authApi } from "@/api/auth";
+import { setAccessToken } from "@/api/client";
+import { conversationApi } from "@/api/conversation";
+import type { SearchUser } from "@/api/user";
+import { userApi } from "@/api/user";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip,
@@ -23,28 +36,15 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Separator } from "@/components/ui/separator";
-import {
-  useQuery,
-  useMutation,
-  useQueryClient,
-  useInfiniteQuery,
-} from "@tanstack/react-query";
-import { authApi } from "@/api/auth";
-import { conversationApi } from "@/api/conversation";
-import { userApi } from "@/api/user";
-import type { SearchUser } from "@/api/user";
-import { setAccessToken } from "@/api/client";
-import { toast } from "sonner";
-import { useAuthStore } from "@/store/authStore";
 import { getSocket } from "@/services/socket";
+import { useAuthStore } from "@/store/authStore";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { toast } from "sonner";
 
 // Types
 interface User {
@@ -811,6 +811,9 @@ export default function ChatPage() {
     );
 
     socket.on("message:error", (data: { error: string }) => {
+      isMessageSending.current = false;
+       // no correlation id in the payload, so drop any pending optimistic entries
+      setSocketMessages((prev) => prev.filter((m) => !m.id.startsWith("temp-")));
       toast.error(data.error);
     });
 

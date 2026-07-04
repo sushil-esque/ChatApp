@@ -53,9 +53,27 @@ export function initSocket(httpServer: httpServer) {
     void socket.join(user.id);
 
     //join a conversation room
-    socket.on("join:conversation", (conversationId: string) => {
-      console.log(`user ${user.name} joined conversation room ${conversationId}`);
-      void socket.join(conversationId);
+    socket.on("join:conversation", async (conversationId: string) => {
+      try {
+        const conversation = await prisma.conversation.findUnique({
+          where: { id: conversationId },
+        });
+
+        if (!conversation) {
+          socket.emit("join:error", { error: "Conversation not found" });
+          return;
+        }
+        if (conversation.userAId !== user.id && conversation.userBId !== user.id) {
+          socket.emit("join:error", { error: "Unauthorized" });
+          return;
+        }
+
+        console.log(`user ${user.name} joined conversation room ${conversationId}`);
+        await socket.join(conversationId);
+      } catch (err) {
+        console.error("Error joining conversation room:", err);
+        socket.emit("join:error", { error: "Failed to join conversation" });
+      }
     });
 
     // leave a conversation room

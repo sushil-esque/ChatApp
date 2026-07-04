@@ -1,12 +1,21 @@
 import { io, Socket } from "socket.io-client";
+import { getAccessToken } from "@/api/client";
 
 let socket: Socket | null = null;
 
 export function initSocket(accessToken: string): Socket {
   if (socket?.connected) return socket;
 
+  // tear down existing socket before creating a new one
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+
   socket = io("http://localhost:3000", {
-    auth: { token: accessToken }, // sent to server middleware
+    // Use a callback so Socket.IO re-reads the token on every reconnect
+    // attempt, picking up any token silently refreshed by the HTTP interceptor.
+    auth: (cb) => cb({ token: getAccessToken() ?? accessToken }),
     withCredentials: true,
   });
 

@@ -1,30 +1,29 @@
-import { useForm, Controller } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Link, useNavigate } from "react-router-dom";
-import { useMutation } from "@tanstack/react-query";
-import { toast } from "sonner";
-import { loginSchema, type LoginForm } from "@/lib/validations/auth";
 import { authApi } from "@/api/auth";
 import { setAccessToken } from "@/api/client";
-import { useAuthStore } from "@/store/authStore";
+import { Button } from "@/components/ui/button";
 import {
   Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Field,
+  FieldError,
   FieldGroup,
   FieldLabel,
-  FieldError,
 } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { loginSchema, type LoginForm } from "@/lib/validations/auth";
+import { useAuthStore } from "@/store/authStore";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useMutation } from "@tanstack/react-query";
 import type { AxiosError } from "axios";
-import { initSocket } from "@/services/socket";
+import { Controller, useForm } from "react-hook-form";
+import { Link, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -44,7 +43,6 @@ export function LoginPage() {
       console.log(data);
       setAccessToken(data.data.accessToken);
       setUser(data.data.user);
-      initSocket(data.data.accessToken);
       navigate("/chat");
     },
     onError: (error: AxiosError<{ error: string; code: string }>) => {
