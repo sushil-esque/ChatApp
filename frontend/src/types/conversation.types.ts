@@ -22,6 +22,7 @@ export interface Conversation {
   lastMessageAt: string | null
   userALastReadAt: string | null
   userBLastReadAt: string | null
+  unreadCount: number
   createdAt: string
   userA: ConversationUser
   userB: ConversationUser

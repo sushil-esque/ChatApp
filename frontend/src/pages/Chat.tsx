@@ -36,15 +36,17 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { getSocket } from "@/services/socket";
+import { useSocketContext } from "@/context/SocketContext";
 import { useAuthStore } from "@/store/authStore";
 import {
+  QueryClient,
   useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
+import type { Conversation } from "@/types/conversation.types";
 
 // Types
 interface User {
@@ -69,15 +71,15 @@ interface Message {
   };
 }
 
-interface Conversation {
-  id: string;
-  userAId: string;
-  userBId: string;
-  lastMessageAt: string | null;
-  userA: { id: string; name: string; avatarUrl: string | null };
-  userB: { id: string; name: string; avatarUrl: string | null };
-  messages: Message[];
-}
+// interface Conversation {
+//   id: string;
+//   userAId: string;
+//   userBId: string;
+//   lastMessageAt: string | null;
+//   userA: { id: string; name: string; avatarUrl: string | null };
+//   userB: { id: string; name: string; avatarUrl: string | null };
+//   messages: Message[];
+// }
 
 // Helper functions
 function getOtherUser(conversation: Conversation, currentUserId: string) {
@@ -107,12 +109,6 @@ function getInitials(name: string) {
     .map((n) => n[0])
     .join("")
     .toUpperCase();
-}
-
-function getUnreadCount(conversation: Conversation, currentUserId: string) {
-  return conversation.messages.filter(
-    (m) => m.senderId !== currentUserId && !m.read,
-  ).length;
 }
 
 // Shifts messages across infinite query pages to keep page boundaries intact during optimistic updates.
@@ -167,6 +163,7 @@ function ConversationSidebar({
   isLoading,
   onConversationCreated,
   queryClient,
+  onLogout,
 }: {
   conversations: Conversation[];
   selectedConversationId: string | null;
@@ -178,6 +175,7 @@ function ConversationSidebar({
   isLoading?: boolean;
   onConversationCreated: (id: string) => void;
   queryClient: ReturnType<typeof useQueryClient>;
+  onLogout?: () => void;
 }) {
   const filteredConversations = conversations.filter((conv) => {
     const otherUser = getOtherUser(conv, currentUser?.id || "");
@@ -290,10 +288,7 @@ function ConversationSidebar({
                 conversation,
                 currentUser?.id || "",
               );
-              const unreadCount = getUnreadCount(
-                conversation,
-                currentUser?.id || "",
-              );
+
               const lastMessage =
                 conversation.messages[conversation.messages.length - 1];
               const isSelected = selectedConversationId === conversation.id;
@@ -322,12 +317,12 @@ function ConversationSidebar({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <p className="font-medium">{otherUser.name}</p>
-                        {unreadCount > 0 && (
+                        {conversation.unreadCount > 0 && (
                           <Badge
                             variant="default"
                             className="ml-auto flex-shrink-0"
                           >
-                            {unreadCount}
+                            {conversation.unreadCount}
                           </Badge>
                         )}
                       </div>
@@ -349,6 +344,46 @@ function ConversationSidebar({
           )}
         </div>
       </ScrollArea>
+
+      {/* User Profile Footer */}
+      {currentUser && (
+        <div className="border-t border-border p-4 bg-muted/30">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3 overflow-hidden">
+              <Avatar className="h-10 w-10 flex-shrink-0">
+                <AvatarImage src={currentUser.avatarUrl || ""} />
+                <AvatarFallback>{getInitials(currentUser.name)}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-foreground">
+                  {currentUser.name}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {currentUser.email}
+                </p>
+              </div>
+            </div>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="flex-shrink-0 hover:bg-muted">
+                  <MoreVertical className="h-5 w-5 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem
+                  onClick={onLogout}
+
+                  className="gap-2 text-red-600 focus:text-red-600 focus:bg-red-500/10 cursor-pointer"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -378,9 +413,9 @@ function MessageBubble({
     >
       {!isOwn && (
         <Avatar className="mt-1 h-6 w-6 flex-shrink-0">
-          <AvatarImage src={message.sender.avatarUrl || ""} />
+          <AvatarImage src={message.sender?.avatarUrl || ""} />
           <AvatarFallback className="text-xs">
-            {getInitials(message.sender.name)}
+            {getInitials(message.sender?.name || "User")}
           </AvatarFallback>
         </Avatar>
       )}
@@ -409,7 +444,7 @@ function MessageBubble({
           </span>
           {isOwn && readReceipts}
           {isOwn && !message.isDeleted && (
-            <DropdownMenu>
+            <DropdownMenu >
               <DropdownMenuTrigger asChild>
                 <button className="p-0 text-muted-foreground hover:text-foreground">
                   <MoreVertical className="h-3 w-3" />
@@ -446,6 +481,12 @@ export default function ChatPage() {
   const [messageInput, setMessageInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
+  const selectedConversationIdRef = useRef<string | null>(selectedConversationId);
+  
+  useEffect(() => {
+    selectedConversationIdRef.current = selectedConversationId;
+  }, [selectedConversationId]);
+
   // messages that arrived via socket — kept separate to avoid mutating the infinite query cache
   // (mutating the cache would corrupt pageParams and break pagination)
   const [socketMessages, setSocketMessages] = useState<Message[]>([]);
@@ -470,8 +511,9 @@ export default function ChatPage() {
   }, [conversations, selectedConversationId]);
 
   // join/leave conversation room amd emit message:seen when selected conversation changes
+  const socket = useSocketContext();
+  
   useEffect(() => {
-    const socket = getSocket();
     if (!socket || !selectedConversationId) return;
 
     socket.emit("join:conversation", selectedConversationId);
@@ -479,7 +521,7 @@ export default function ChatPage() {
     return () => {
       socket.emit("leave:conversation", selectedConversationId);
     };
-  }, [selectedConversationId]);
+  }, [selectedConversationId, socket]);
 
   // Clear socket messages whenever the user switches conversations
   useEffect(() => {
@@ -560,14 +602,13 @@ export default function ChatPage() {
 
   // emit read when new message arrives and it's from the other user
   useEffect(() => {
-    const socket = getSocket();
     if (!socket || !selectedConversationId) return;
     if (!lastMessageId) return;
 
     if (lastMessageSenderId !== user?.id) {
       socket.emit("messages:read", { conversationId: selectedConversationId });
     }
-  }, [lastMessageId, lastMessageSenderId, selectedConversationId, user?.id]);
+  }, [lastMessageId, lastMessageSenderId, selectedConversationId, user?.id, socket]);
 
   // Send message mutation
   const sendMessageMutation = useMutation({
@@ -670,17 +711,24 @@ export default function ChatPage() {
     },
   });
 
+  const isMessageDeleted = useRef(false);
   // Delete message mutation
   const deleteMessageMutation = useMutation({
     mutationFn: (messageId: string) =>
       conversationApi.deleteMessage(selectedConversationId!, messageId),
-    onSuccess: () => {
+    onMutate: (messageId) => {
+      isMessageDeleted.current = true;
+      return messageId;
+    },
+    onSuccess: (_, __, context) => {
       void queryClient.invalidateQueries({
         queryKey: ["messages", selectedConversationId],
       });
+      setSocketMessages((prev) => prev.filter((m) => m.id != context));
       toast.success("Message deleted");
     },
     onError: () => {
+      isMessageDeleted.current = false;
       toast.error("Failed to delete message");
     },
   });
@@ -706,7 +754,6 @@ export default function ChatPage() {
   const handleSendMessage = () => {
     if (!messageInput.trim() || !selectedConversationId) return;
 
-    const socket = getSocket();
     const content = messageInput;
     isMessageSending.current = true;
     bottomRef.current?.scrollIntoView({ behavior: "auto" });
@@ -744,12 +791,68 @@ export default function ChatPage() {
   };
 
   const messageCameFromSocket = useRef(false);
+  // helper function to update conversation in cache
+  function updateConversationLastMessage(
+    queryClient: QueryClient,
+    message: Message,
+  ) {
+    queryClient.setQueryData(
+      ["conversations"],
+      (old: Conversation[] | undefined) => {
+        if (!old) return old;
+        return old
+          .map((conv) =>
+            conv.id === message.conversationId
+              ? {
+                  ...conv,
+                  lastMessageAt: message.createdAt,
+                  messages: [message], // last message preview
+                  // if message is from me or for the currently active conversation — unread count stays same
+                  // if message is from other for a different conversation — increment unread count
+                  unreadCount:
+                    message.senderId === user?.id || message.conversationId === selectedConversationIdRef.current
+                      ? conv.unreadCount
+                      : conv.unreadCount + 1,
+                }
+              : conv,
+          )
+          .sort((a, b) => {
+            // keep most recent conversation at top
+            const aTime = a.lastMessageAt
+              ? new Date(a.lastMessageAt).getTime()
+              : 0;
+            const bTime = b.lastMessageAt
+              ? new Date(b.lastMessageAt).getTime()
+              : 0;
+            return bTime - aTime;
+          });
+      },
+    );
+  }
+
+  // when conversation is selected — reset unread count in cache
+  useEffect(() => {
+    if (!selectedConversationId) return;
+
+    queryClient.setQueryData(
+      ["conversations"],
+      (old: Conversation[] | undefined) => {
+        if (!old) return old;
+        return old.map((conv) =>
+          conv.id === selectedConversationId
+            ? { ...conv, unreadCount: 0 }
+            : conv,
+        );
+      },
+    );
+  }, [selectedConversationId, queryClient]);
+
   // listen for incoming messages
   useEffect(() => {
-    const socket = getSocket();
     if (!socket) return;
 
     socket.on("message:received", (message: Message) => {
+      console.log("message recieved", message);
       isMessageSending.current = false;
       console.log(isMessageSending.current, "isMessageSending after received");
       if (message.senderId === user?.id) {
@@ -759,9 +862,10 @@ export default function ChatPage() {
           ...prev.filter((m) => !m.id.startsWith("temp-")),
           message,
         ]);
-        console.log("message received");
+        console.log("own message received");
 
-        void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+        // void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+        updateConversationLastMessage(queryClient, message);
         return;
       }
 
@@ -777,12 +881,19 @@ export default function ChatPage() {
       });
 
       // update conversation list (last message preview + unread count)
-      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      // void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      updateConversationLastMessage(queryClient, message);
     });
 
     socket.on(
       "messages:seen",
       (data: { conversationId: string; seenBy: string; seenAt: string }) => {
+        console.log(
+          "messages seen",
+          data.conversationId,
+          data.seenBy,
+          data.seenAt,
+        );
         // update messages in cache — mark all messages as read
         queryClient.setQueryData(
           ["messages", data.conversationId],
@@ -810,19 +921,56 @@ export default function ChatPage() {
       },
     );
 
+    socket.on("message:deleted", (message: Message) => {
+      isMessageDeleted.current = true;
+      console.log("message deleted", message);
+      // update messages in cache — mark all messages as read
+      // queryClient.setQueryData(
+      //   ["messages", message.conversationId],
+      //   (old: { pages: Message[][]; pageParams: unknown[] } | undefined) => {
+      //     if (!old) return old;
+      //     return {
+      //       ...old,
+      //       pages: old.pages.map((page) =>
+      //         page.map((m) => ({
+      //           ...m,
+      //           isDeleted: m.id === message.id ? true : m.isDeleted,
+      //         })),
+      //       ),
+      //     };
+      //   },
+      // );
+
+      // also update socket messages
+      // setSocketMessages((prev) =>
+      //   prev.map((m) => ({
+      //     ...m,
+      //     isDeleted: m.id === message.id ? true : m.isDeleted,
+      //   })),
+      // );
+
+      queryClient.invalidateQueries({
+        queryKey: ["messages", message.conversationId],
+      });
+      setSocketMessages((prev) => prev.filter((m) => m.id !== message.id));
+    });
+
     socket.on("message:error", (data: { error: string }) => {
       isMessageSending.current = false;
-       // no correlation id in the payload, so drop any pending optimistic entries
-      setSocketMessages((prev) => prev.filter((m) => !m.id.startsWith("temp-")));
+      // no correlation id in the payload, so drop any pending optimistic entries
+      setSocketMessages((prev) =>
+        prev.filter((m) => !m.id.startsWith("temp-")),
+      );
       toast.error(data.error);
     });
 
     return () => {
+      socket.off("message:deleted");
       socket.off("message:received");
       socket.off("messages:seen");
       socket.off("message:error");
     };
-  }, [queryClient, user?.id]);
+  }, [queryClient, user?.id, socket]);
 
   useEffect(() => {
     useEffectRanRef.current += 1;
@@ -834,47 +982,33 @@ export default function ChatPage() {
 
     const scrollContainer = scrollAreaRef.current?.querySelector(
       "[data-radix-scroll-area-viewport]",
-    );
-    // if (!scrollContainer) return;
+    ) as HTMLDivElement | null;
 
-    console.log(
-      scrollContainer?.scrollHeight,
-      "scrollContainer.scrollHeight from first use effect",
-    );
-    console.log(
-      scrollContainer?.scrollTop,
-      "scrollContainer.scrollTop from first use effect",
-    );
-    console.log(
-      prevScrollHeightRef.current,
-      "prevscroll height ref from first use effect before if",
-    );
-    console.log(messages.length, "length of messages");
-    console.log(isMessageSending.current, "isMessageSending");
+    if (scrollContainer) {
+      const diff = scrollContainer.scrollHeight - prevScrollHeightRef.current;
 
-    if (messages.length > 30 && !isMessageSending.current) {
-      const diff = scrollContainer?.scrollHeight - prevScrollHeightRef.current;
-      console.log(diff, "diff");
-      if (diff > 0 && !messageCameFromSocket.current) {
-        console.log("scrolling to diff", diff);
-        scrollContainer.scrollTop = diff;
-      } else {
-        console.log("scrolling to bottomRef");
+      if (isMessageSending.current || messageCameFromSocket.current) {
         bottomRef.current?.scrollIntoView({ behavior: "auto" });
+      } else if (isMessageDeleted.current) {
+        console.log(diff,"diff in isDeleted.current")
+        // Do nothing to preserve scroll position when a message is deleted
+      } else if (messages.length <= 30) {
+        // Initial load or first page
+        if (diff > 0) {
+          bottomRef.current?.scrollIntoView({ behavior: "auto" });
+        }
+      } else {
+        // Infinite scroll fetched older messages
+        if (diff > 0) {
+          scrollContainer.scrollTop = diff;
+        }
       }
-    }
-    if (messages.length < 31 || isMessageSending.current) {
-      console.log("scrolling to bottomRef for < 31 or when sending");
-      bottomRef.current?.scrollIntoView({ behavior: "auto" });
+
+      prevScrollHeightRef.current = scrollContainer.scrollHeight;
     }
 
-    // bottomRef.current?.scrollIntoView({ behavior: "auto" });
-    prevScrollHeightRef.current = scrollContainer?.scrollHeight;
-    console.log(
-      prevScrollHeightRef.current,
-      "prevScrollHeightRef from first use effect",
-    );
     messageCameFromSocket.current = false;
+    isMessageDeleted.current = false; 
   }, [messages]);
 
   useEffect(() => {
@@ -955,6 +1089,7 @@ export default function ChatPage() {
             isLoading={conversationsLoading}
             onConversationCreated={(id) => setSelectedConversationId(id)}
             queryClient={queryClient}
+            onLogout={handleLogout}
           />
         </div>
 
@@ -964,7 +1099,7 @@ export default function ChatPage() {
           <div className="flex items-center gap-2 border-b border-border bg-background p-4 md:hidden">
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
               <SheetTrigger asChild>
-                <Button size="icon" variant="ghost">
+                <Button size="icon" variant="ghost" className="text-foreground hover:bg-muted">
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
@@ -980,6 +1115,7 @@ export default function ChatPage() {
                   isLoading={conversationsLoading}
                   onConversationCreated={(id) => setSelectedConversationId(id)}
                   queryClient={queryClient}
+                  onLogout={handleLogout}
                 />
               </SheetContent>
             </Sheet>
@@ -1045,7 +1181,7 @@ export default function ChatPage() {
                       <MoreVertical className="h-5 w-5 text-2xl text-muted-foreground" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48 dark">
+                  <DropdownMenuContent align="end" className="w-48">
                     <DropdownMenuItem>Block user</DropdownMenuItem>
                     <DropdownMenuItem>Clear chat</DropdownMenuItem>
                   </DropdownMenuContent>
@@ -1175,43 +1311,6 @@ export default function ChatPage() {
               </div>
             </div>
           )}
-        </div>
-
-        {/* User Profile Menu (Desktop) */}
-        <div className="hidden border-l border-border bg-background p-4 md:flex">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-12 w-12 rounded-full"
-              >
-                <Avatar className="h-10 w-10">
-                  <AvatarImage src={user?.avatarUrl || ""} />
-                  <AvatarFallback>
-                    {getInitials(user?.name || "U")}
-                  </AvatarFallback>
-                </Avatar>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48 dark">
-              <div className="px-2 py-1.5">
-                <p className="text-sm font-medium text-foreground">
-                  {user?.name}
-                </p>
-                <p className="text-xs text-muted-foreground">{user?.email}</p>
-              </div>
-              <Separator />
-              <DropdownMenuItem
-                onClick={handleLogout}
-                className="gap-2 text-red-600 focus:text-red-600"
-                disabled={logoutMutate.isPending}
-              >
-                <LogOut className="h-4 w-4" />
-                Logout
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
     </TooltipProvider>

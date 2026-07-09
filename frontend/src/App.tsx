@@ -13,52 +13,55 @@ import { useInitAuth } from "./hooks/useInitAuth";
 import { useAuthStore } from "./store/authStore";
 import { PublicRoute } from "./components/PublicRoute";
 import { useSocket } from "./hooks/useSocket";
+import { SocketContext } from "@/context/SocketContext";
 
 const queryClient = new QueryClient();
 
 function AppInner() {
-  useInitAuth()
-  useSocket()
+  useInitAuth();
+  const socket = useSocket();
+  console.log(socket, "socket ");
 
-  const isLoading = useAuthStore((state) => state.isLoading)
+  const isLoading = useAuthStore((state) => state.isLoading);
 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p>Loading...</p>
       </div>
-    )
+    );
   }
 
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<PublicRoute />}>
-          <Route element={<AuthLayout />}>
-            <Route path="/" element={<Home />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/verify-email" element={<VerifyEmail />} />
+    <SocketContext.Provider value={socket}>
+      <BrowserRouter>
+        <Routes>
+          <Route element={<PublicRoute />}>
+            <Route element={<AuthLayout />}>
+              <Route path="/" element={<Home />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/verify-email" element={<VerifyEmail />} />
+            </Route>
           </Route>
-        </Route>
-        <Route element={<ProtectedRoute />}>
-          <Route element={<AppLayout />}>
-            <Route path="/chat" element={<Chat />} />
-            <Route path="/chat/:conversationId" element={<Chat />} />
+          <Route element={<ProtectedRoute />}>
+            <Route element={<AppLayout />}>
+              <Route path="/chat" element={<Chat />} />
+              <Route path="/chat/:conversationId" element={<Chat />} />
+            </Route>
           </Route>
-        </Route>
-      </Routes>
-    </BrowserRouter>
-  )
+        </Routes>
+      </BrowserRouter>
+    </SocketContext.Provider>
+  );
 }
 
 function App() {
-  
   return (
     <>
       <Toaster theme="dark" />
       <QueryClientProvider client={queryClient}>
-       <AppInner />
+        <AppInner />
       </QueryClientProvider>
     </>
   );

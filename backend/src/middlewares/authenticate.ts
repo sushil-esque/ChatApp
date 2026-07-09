@@ -16,7 +16,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
   const decoded = verifyAccessToken(token)      
 
   const session = await prisma.refreshToken.findUnique({ where: { id: decoded.sessionId } })
-  if (!session) throw new CustomError('Session revoked', 401, 'TOKEN_INVALID')
+  if (!session) throw new CustomError('Session revoked', 401, 'SESSION_REVOKED')
 
     if (session.expiresAt < new Date()) {
         await prisma.refreshToken.delete({ where: { id: session.id } })

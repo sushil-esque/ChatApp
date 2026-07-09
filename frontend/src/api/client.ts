@@ -57,6 +57,17 @@ api.interceptors.response.use(
         return Promise.reject(refreshError);
       }
     }
+    // session revoked or token invalid — force login immediately
+    if (
+      error.response?.status === 401 &&
+      (error.response?.data?.code === "SESSION_REVOKED" ||
+        error.response?.data?.code === "TOKEN_INVALID" ||
+        error.response?.data?.code === "TOKEN_MISSING")
+    ) {
+      setAccessToken(null);
+      window.location.href = "/login";
+      return Promise.reject(error);
+    }
 
     return Promise.reject(error);
   },
