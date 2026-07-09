@@ -858,16 +858,22 @@ export default function ChatPage() {
       if (message.senderId === user?.id) {
         // Our own message came back confirmed from the server.
         // Remove the temp-* optimistic entry and add the real message in its place.
+        updateConversationLastMessage(queryClient, message);
+        if (message.conversationId !== selectedConversationIdRef.current) return;
+
         setSocketMessages((prev) => [
           ...prev.filter((m) => !m.id.startsWith("temp-")),
           message,
         ]);
         console.log("own message received");
 
-        // void queryClient.invalidateQueries({ queryKey: ["conversations"] });
-        updateConversationLastMessage(queryClient, message);
         return;
       }
+
+      // update conversation list (last message preview + unread count)
+      updateConversationLastMessage(queryClient, message);
+
+      if (message.conversationId !== selectedConversationIdRef.current) return;
 
       // Someone else's message — add to socketMessages, deduped.
       // We deliberately do NOT touch the infinite query cache so that
@@ -879,10 +885,6 @@ export default function ChatPage() {
         if (exists) return prev;
         return [...prev, message];
       });
-
-      // update conversation list (last message preview + unread count)
-      // void queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      updateConversationLastMessage(queryClient, message);
     });
 
     socket.on(
@@ -922,36 +924,15 @@ export default function ChatPage() {
     );
 
     socket.on("message:deleted", (message: Message) => {
-      isMessageDeleted.current = true;
       console.log("message deleted", message);
-      // update messages in cache — mark all messages as read
-      // queryClient.setQueryData(
-      //   ["messages", message.conversationId],
-      //   (old: { pages: Message[][]; pageParams: unknown[] } | undefined) => {
-      //     if (!old) return old;
-      //     return {
-      //       ...old,
-      //       pages: old.pages.map((page) =>
-      //         page.map((m) => ({
-      //           ...m,
-      //           isDeleted: m.id === message.id ? true : m.isDeleted,
-      //         })),
-      //       ),
-      //     };
-      //   },
-      // );
-
-      // also update socket messages
-      // setSocketMessages((prev) =>
-      //   prev.map((m) => ({
-      //     ...m,
-      //     isDeleted: m.id === message.id ? true : m.isDeleted,
-      //   })),
-      // );
 
       queryClient.invalidateQueries({
         queryKey: ["messages", message.conversationId],
       });
+
+      if (message.conversationId !== selectedConversationIdRef.current) return;
+
+      isMessageDeleted.current = true;
       setSocketMessages((prev) => prev.filter((m) => m.id !== message.id));
     });
 

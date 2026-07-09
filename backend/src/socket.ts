@@ -91,6 +91,11 @@ export function initSocket(httpServer: httpServer) {
       try {
         const { conversationId, content } = data;
 
+        if (!content || content.trim() === "") {
+          socket.emit("message:error", { error: "Message is required" });
+          return;
+        }
+
         const conversation = await prisma.conversation.findUnique({
           where: { id: conversationId },
         });
@@ -117,10 +122,7 @@ export function initSocket(httpServer: httpServer) {
           socket.emit("message:error", { error: "You are blocked" });
           return;
         }
-        if (!content || content.trim() === "") {
-          socket.emit("message:error", { error: "Message is required" });
-          return;
-        }
+
         // save message to db
         const [message] = await prisma.$transaction([
           prisma.message.create({
