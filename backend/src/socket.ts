@@ -3,6 +3,8 @@ import { Server as httpServer } from "http";
 import { verifyAccessToken } from "./utils/jwt";
 import { prisma } from "./db/prisma";
 
+let ioInstance: Server | null = null;
+
 export function initSocket(httpServer: httpServer) {
   const io = new Server(httpServer, {
     cors: {
@@ -10,6 +12,8 @@ export function initSocket(httpServer: httpServer) {
       credentials: true,
     },
   });
+
+  ioInstance = io;
 
   io.use((socket, next) => {
     void (async () => {
@@ -83,8 +87,14 @@ export function initSocket(httpServer: httpServer) {
     });
 
     socket.on("message:send", async (data: { conversationId: string; content: string }) => {
+      console.log("message:send", data);
       try {
         const { conversationId, content } = data;
+
+        if (!content || content.trim() === "") {
+          socket.emit("message:error", { error: "Message is required" });
+          return;
+        }
 
         const conversation = await prisma.conversation.findUnique({
           where: { id: conversationId },
@@ -112,10 +122,7 @@ export function initSocket(httpServer: httpServer) {
           socket.emit("message:error", { error: "You are blocked" });
           return;
         }
-        if(!content || content.trim() === '') {
-      socket.emit('message:error', { error: 'Message is required' })
-      return
-    }
+
         // save message to db
         const [message] = await prisma.$transaction([
           prisma.message.create({
@@ -181,4 +188,11 @@ export function initSocket(httpServer: httpServer) {
   });
 
   return io;
+}
+
+export function getIo(): Server | null {
+  if (!ioInstance) {
+    throw new Error("Socket.IO not initialized. Call initSocket() first.");
+  }
+  return ioInstance;
 }

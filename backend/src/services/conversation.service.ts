@@ -40,7 +40,7 @@ export async function getConversations(userId: string) {
         { userBId: userId },
       ],
     },
-    orderBy: { lastMessageAt: {sort:"desc",nulls:"last"} },
+    orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
     include: {
       userA: { select: { id: true, name: true, avatarUrl: true } },
       userB: { select: { id: true, name: true, avatarUrl: true } },
@@ -51,7 +51,23 @@ export async function getConversations(userId: string) {
       },
     },
   });
-  return conversations;
+  return Promise.all(
+    conversations.map(async (conv) => {
+      const isUserA = conv.userAId === userId;
+      const lastReadAt = isUserA ? conv.userALastReadAt : conv.userBLastReadAt;
+
+      const unreadCount = await prisma.message.count({
+        where: {
+          conversationId: conv.id,
+          senderId: { not: userId }, // not sent by me
+          isDeleted: false,
+          createdAt: lastReadAt ? { gt: lastReadAt } : undefined, // after last read
+        },
+      });
+
+      return { ...conv, unreadCount };
+    }),
+  );
 }
 
 export async function getConversationById(conversationId: string, userId: string) {

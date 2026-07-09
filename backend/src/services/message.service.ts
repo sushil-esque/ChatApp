@@ -1,5 +1,6 @@
 import { prisma } from "../db/prisma";
 import { CustomError } from "../errors/customError";
+import { getIo } from "../socket";
 
 export async function sendMessage(conversationId: string, senderId: string, content: string) {
   const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
@@ -29,6 +30,15 @@ export async function sendMessage(conversationId: string, senderId: string, cont
         conversationId,
         senderId,
       },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            name: true,
+            avatarUrl: true,
+          },
+        },
+      },
     }),
     prisma.conversation.update({
       where: {
@@ -39,6 +49,11 @@ export async function sendMessage(conversationId: string, senderId: string, cont
       },
     }),
   ]);
+  const io = getIo();
+  if (io) {
+    const recipientId = conversation.userAId === senderId ? conversation.userBId : conversation.userAId;
+    io.to(conversationId).to(recipientId).emit("message:received", message);
+  }
   return message;
 }
 
@@ -106,9 +121,15 @@ export async function deleteMessage(conversationId: string, messageId: string, u
   if (!message) throw new CustomError("Message not found", 404);
   if (message.conversationId !== conversationId) throw new CustomError("Message does not belong to conversation", 400);
   if (message.senderId !== userId) throw new CustomError("Unauthorized", 403);
-
-  return prisma.message.update({
+  const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  if (!conversation) throw new CustomError("Conversation not found", 404);
+  await prisma.message.update({
     where: { id: messageId },
     data: { isDeleted: true, content: "This message was deleted" },
   });
+  const io = getIo();
+  if (io) {
+    const recipientId = conversation.userAId === userId ? conversation.userBId : conversation.userAId;
+    io.to(conversationId).to(recipientId).emit("message:deleted", message);
+  }
 }

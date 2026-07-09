@@ -41,5 +41,6 @@ export const deleteMessage = asyncHandler(async (req, res) => {
   const convParamsParsed = paramsConversationDto.safeParse(req.params);
   if (!convParamsParsed.success) return res.status(400).json({ error: "Invalid conversation id", details: convParamsParsed.error.issues });
   await messageService.deleteMessage(convParamsParsed.data.id, paramsParsed.data.messageId, req.user.id);
+  
   res.status(204).send();
 });
