@@ -19,7 +19,9 @@ export const authApi = {
   logout: () => api.post("/auth/logout"),
   refresh: () =>
     axios.get<{ accessToken: string }>(
-      "http://localhost:3000/api/auth/refresh",
-      { withCredentials: true },
+      `${import.meta.env.VITE_API_BASE_URL}/auth/refresh`,
+      {
+        withCredentials: true,
+      },
     ),
 };

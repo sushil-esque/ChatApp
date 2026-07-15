@@ -182,6 +182,23 @@ export function initSocket(httpServer: httpServer) {
       }
     });
 
+    // typing indicators
+    socket.on("typing:start", (data: { conversationId: string }) => {
+      const { conversationId } = data;
+      socket.to(conversationId).emit("typing:start", {
+        conversationId,
+        userId: user.id,
+      });
+    });
+
+    socket.on("typing:stop", (data: { conversationId: string }) => {
+      const { conversationId } = data;
+      socket.to(conversationId).emit("typing:stop", {
+        conversationId,
+        userId: user.id,
+      });
+    });
+
     socket.on("disconnect", () => {
       console.log(`User disconnected: ${user.name}`);
     });

@@ -25,6 +25,8 @@ import { Controller, useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
+import { PasswordInput } from "@/components/ui/password-input";
+
 export function LoginPage() {
   const navigate = useNavigate();
   const setUser = useAuthStore((state) => state.setUser);
@@ -102,10 +104,9 @@ export function LoginPage() {
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
                   <FieldLabel htmlFor="password">Password</FieldLabel>
-                  <Input
+                  <PasswordInput
                     {...field}
                     id="password"
-                    type="password"
                     placeholder="Enter your password"
                     autoComplete="current-password"
                     aria-invalid={fieldState.invalid}

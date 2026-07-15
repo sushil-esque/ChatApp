@@ -8,6 +8,7 @@ import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import VerifyEmail from "@/pages/VerifyEmail";
 import Chat from "@/pages/Chat";
+import Profile from "@/pages/Profile";
 import Home from "./pages/Home";
 import { useInitAuth } from "./hooks/useInitAuth";
 import { useAuthStore } from "./store/authStore";
@@ -20,7 +21,7 @@ const queryClient = new QueryClient();
 function AppInner() {
   useInitAuth();
   const socket = useSocket();
-  console.log(socket, "socket ");
+  console.log(socket, "inner app socket");
 
   const isLoading = useAuthStore((state) => state.isLoading);
 
@@ -34,24 +35,23 @@ function AppInner() {
 
   return (
     <SocketContext.Provider value={socket}>
-      <BrowserRouter>
-        <Routes>
-          <Route element={<PublicRoute />}>
-            <Route element={<AuthLayout />}>
-              <Route path="/" element={<Home />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
-              <Route path="/verify-email" element={<VerifyEmail />} />
-            </Route>
+      <Routes>
+        <Route element={<PublicRoute />}>
+          <Route element={<AuthLayout />}>
+            <Route path="/" element={<Home />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
           </Route>
-          <Route element={<ProtectedRoute />}>
-            <Route element={<AppLayout />}>
-              <Route path="/chat" element={<Chat />} />
-              <Route path="/chat/:conversationId" element={<Chat />} />
-            </Route>
+        </Route>
+        <Route element={<ProtectedRoute />}>
+          <Route element={<AppLayout />}>
+            <Route path="/chat" element={<Chat />} />
+            <Route path="/chat/:conversationId" element={<Chat />} />
+            <Route path="/profile" element={<Profile />} />
           </Route>
-        </Routes>
-      </BrowserRouter>
+        </Route>
+      </Routes>
     </SocketContext.Provider>
   );
 }
@@ -61,7 +61,9 @@ function App() {
     <>
       <Toaster theme="dark" />
       <QueryClientProvider client={queryClient}>
-        <AppInner />
+        <BrowserRouter>
+          <AppInner />
+        </BrowserRouter>
       </QueryClientProvider>
     </>
   );

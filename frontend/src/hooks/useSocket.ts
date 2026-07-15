@@ -11,18 +11,31 @@ export function useSocket() {
 
   useEffect(() => {
     if (isLoading) return;
+
     if (!isAuthenticated) {
       disconnectSocket();
       setSocket(null);
       return;
     }
+
     const token = getAccessToken();
     if (!token) return;
 
     const newSocket = initSocket(token);
     setSocket(newSocket);
 
+    // The socket object reference never changes after connect —
+    // React won't re-render on its own when .connected flips to true.
+    // Force a re-render so consumers always see the live connected state.
+    const onConnect = () => setSocket((s) => (s ? s : newSocket));
+    const onDisconnect = () => setSocket((s) => (s ? s : null));
+
+    newSocket.on("connect", onConnect);
+    newSocket.on("disconnect", onDisconnect);
+
     return () => {
+      newSocket.off("connect", onConnect);
+      newSocket.off("disconnect", onDisconnect);
       disconnectSocket();
       setSocket(null);
     };
@@ -30,3 +43,4 @@ export function useSocket() {
 
   return socket;
 }
+

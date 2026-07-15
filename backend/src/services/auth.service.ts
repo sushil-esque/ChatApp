@@ -5,6 +5,7 @@ import { prisma } from "../db/prisma.js";
 import { CustomError } from "../errors/customError.js";
 import { generateAccessToken, generateRefreshToken } from "../utils/jwt.js";
 import { generateOtp, hashOtp } from "../utils/otp.js";
+import { sendEmail } from "./email.service.js";
 
 export async function login(email: string, password: string, deviceName?: string, ipAddress?: string) {
   const user = await prisma.user.findUnique({ where: { email } });
@@ -62,11 +63,14 @@ export async function register(name: string, email: string, password: string) {
     return newUser;
   });
 
-  console.log(`OTP for ${user.id}: ${otp}`);
+  await sendEmail(email, "Welcome to GuffHub - Verify your email", `Your OTP is ${otp}`, `<p>Your OTP is <b>${otp}</b></p>`);
   return sanitizeUser(user);
 }
 
 export async function sendOtp(userId: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new CustomError("User not found", 404);
+
   const otp = generateOtp();
   const otpHash = await hashOtp(otp); // bcrypt hash
 
@@ -85,7 +89,7 @@ export async function sendOtp(userId: string) {
   });
 
   // send otp via email
-  console.log(`OTP for ${userId}: ${otp}`);
+  await sendEmail(user.email, "GuffHub - Your OTP", `Your OTP is ${otp}`, `<p>Your OTP is <b>${otp}</b></p>`);
 }
 
 export async function resendOtp(email: string) {
@@ -109,7 +113,7 @@ export async function resendOtp(email: string) {
     where: { userId: user.id },
   });
 
-  console.log(`Resent OTP for ${user.id}: ${otp}`);
+  await sendEmail(user.email, "GuffHub - Your New OTP", `Your OTP is ${otp}`, `<p>Your OTP is <b>${otp}</b></p>`);
 }
 
 export async function verifyEmail(email: string, inputOtp: string, deviceName?: string, ipAddress?: string) {

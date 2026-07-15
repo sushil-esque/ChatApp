@@ -1,7 +1,9 @@
 import axios from "axios";
 
+const BASE_URL = import.meta.env.VITE_API_BASE_URL as string;
+
 const api = axios.create({
-  baseURL: "http://localhost:3000/api",
+  baseURL: BASE_URL,
   withCredentials: true,
 });
 
@@ -41,11 +43,9 @@ api.interceptors.response.use(
       originalRequest._retry = true; // a guard for an infinite loop that could be caused by 401
       try {
         // call refresh endpoint — browser sends refreshToken cookie automatically
-        const { data } = await axios.get(
-          "http://localhost:3000/api/auth/refresh",
-
-          { withCredentials: true },
-        );
+        const { data } = await axios.get(`${BASE_URL}/auth/refresh`, {
+          withCredentials: true,
+        });
         setAccessToken(data.accessToken);
         // retry the original request with new token
         originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
