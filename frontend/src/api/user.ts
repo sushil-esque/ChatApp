@@ -10,4 +10,6 @@ export interface SearchUser {
 export const userApi = {
   searchUsers: (q: string) =>
     api.get<SearchUser[]>("/users/search", { params: { q } }),
+  updateProfile: (data: { name?: string; oldPassword?: string; newPassword?: string }) =>
+    api.put<{ message: string }>("/users/update", data),
 };

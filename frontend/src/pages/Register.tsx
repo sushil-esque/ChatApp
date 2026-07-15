@@ -22,6 +22,8 @@ import {
   FieldError,
 } from "@/components/ui/field";
 
+import { PasswordInput } from "@/components/ui/password-input";
+
 export function RegisterPage() {
   const navigate = useNavigate();
 
@@ -106,10 +108,9 @@ export function RegisterPage() {
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
                   <FieldLabel htmlFor="password">Password</FieldLabel>
-                  <Input
+                  <PasswordInput
                     {...field}
                     id="password"
-                    type="password"
                     placeholder="At least 8 characters"
                     autoComplete="new-password"
                     aria-invalid={fieldState.invalid}

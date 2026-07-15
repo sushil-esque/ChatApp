@@ -1,4 +1,6 @@
 import { prisma } from "../db/prisma.js";
+import { CustomError } from "../errors/customError.js";
+import bcrypt from "bcrypt";
 
 export async function searchUsers(query: string, currentUserId: string) {
   return prisma.user.findMany({
@@ -7,10 +9,7 @@ export async function searchUsers(query: string, currentUserId: string) {
         { id: { not: currentUserId } },
         { verified: true },
         {
-          OR: [
-            { name: { contains: query, mode: "insensitive" } },
-            { email: { contains: query, mode: "insensitive" } },
-          ],
+          OR: [{ name: { contains: query, mode: "insensitive" } }, { email: { contains: query, mode: "insensitive" } }],
         },
       ],
     },
@@ -37,4 +36,31 @@ export async function getMe(userId: string) {
       createdAt: true,
     },
   });
+}
+
+export async function updateProfile(userId: string, data: { name?: string; newPassword?: string; oldPassword?: string }) {
+  if (data.newPassword && data.oldPassword) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new CustomError("User not found", 404);
+    const isPasswordValid = await bcrypt.compare(data.oldPassword, user.passwordHash);
+    if (!isPasswordValid) throw new CustomError("Invalid old password", 400);
+    const hashedPassword = await bcrypt.hash(data.newPassword, 10);
+
+    return prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash: hashedPassword,
+      },
+    });
+  }
+  if (data.name){
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new CustomError("User not found", 404);
+    return prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: data.name,
+      },
+    });
+  }
 }

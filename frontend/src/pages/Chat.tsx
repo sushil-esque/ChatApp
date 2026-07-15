@@ -1,15 +1,15 @@
 import {
   ArrowLeft,
   LogOut,
-  Menu,
   MoreVertical,
   Search,
   Send,
   Trash2,
+  User as UserIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useInView } from "react-intersection-observer";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { authApi } from "@/api/auth";
 import { setAccessToken } from "@/api/client";
@@ -28,7 +28,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+
+import { Marker, MarkerContent } from "@/components/ui/marker";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip,
@@ -38,6 +39,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useSocketContext } from "@/context/SocketContext";
 import { useAuthStore } from "@/store/authStore";
+import type { Conversation } from "@/types/conversation.types";
 import {
   QueryClient,
   useInfiniteQuery,
@@ -46,7 +48,6 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { Conversation } from "@/types/conversation.types";
 
 // Types
 interface User {
@@ -166,7 +167,7 @@ function ConversationSidebar({
   onLogout,
 }: {
   conversations: Conversation[];
-  selectedConversationId: string | null;
+  selectedConversationId: string | undefined;
   onSelectConversation: (id: string) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
@@ -269,7 +270,7 @@ function ConversationSidebar({
                 >
                   <Avatar className="h-10 w-10 flex-shrink-0">
                     <AvatarImage src={user.avatarUrl || ""} />
-                    <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
+                    <AvatarFallback>{getInitials(user?.name)}</AvatarFallback>
                   </Avatar>
                   <div className="min-w-0 flex-1">
                     <p className="font-medium text-sm text-foreground">
@@ -366,14 +367,26 @@ function ConversationSidebar({
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="flex-shrink-0 hover:bg-muted">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="flex-shrink-0 hover:bg-muted"
+                >
                   <MoreVertical className="h-5 w-5 text-muted-foreground" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem asChild>
+                  <Link
+                    to="/profile"
+                    className="gap-2 cursor-pointer w-full flex items-center"
+                  >
+                    <UserIcon className="h-4 w-4" />
+                    Profile
+                  </Link>
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={onLogout}
-
                   className="gap-2 text-red-600 focus:text-red-600 focus:bg-red-500/10 cursor-pointer"
                 >
                   <LogOut className="h-4 w-4" />
@@ -444,7 +457,7 @@ function MessageBubble({
           </span>
           {isOwn && readReceipts}
           {isOwn && !message.isDeleted && (
-            <DropdownMenu >
+            <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="p-0 text-muted-foreground hover:text-foreground">
                   <MoreVertical className="h-3 w-3" />
@@ -475,16 +488,29 @@ export default function ChatPage() {
   const user = useAuthStore((state) => state.user);
   const setUser = useAuthStore((state) => state.setUser);
 
-  const [selectedConversationId, setSelectedConversationId] = useState<
-    string | null
-  >(null);
-  const [messageInput, setMessageInput] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const selectedConversationIdRef = useRef<string | null>(selectedConversationId);
-  
+  const { conversationId: selectedConversationId } = useParams<{
+    conversationId: string;
+  }>();
+
+  // Ref that is always current — used inside the socket listener to avoid
+  // a stale closure (the listener effect only runs when socket/user changes,
+  // not on every navigation, so selectedConversationId would otherwise be stale).
+  const selectedConversationIdRef = useRef<string | undefined>(
+    selectedConversationId,
+  );
   useEffect(() => {
     selectedConversationIdRef.current = selectedConversationId;
+  }, [selectedConversationId]);
+
+  const [showMobileChat, setShowMobileChat] = useState(
+    !!selectedConversationId,
+  );
+  const [messageInput, setMessageInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Sync showMobileChat when URL changes — handles browser back/forward
+  useEffect(() => {
+    setShowMobileChat(!!selectedConversationId);
   }, [selectedConversationId]);
 
   // messages that arrived via socket — kept separate to avoid mutating the infinite query cache
@@ -503,16 +529,11 @@ export default function ChatPage() {
       enabled: !!user, // only fetch when user is set (token is ready)
     });
 
-  // Set first conversation as selected on load
-  useEffect(() => {
-    if (conversations.length > 0 && !selectedConversationId) {
-      setSelectedConversationId(conversations[0].id);
-    }
-  }, [conversations, selectedConversationId]);
-
   // join/leave conversation room amd emit message:seen when selected conversation changes
   const socket = useSocketContext();
-  
+
+  console.log(socket, "socket");
+
   useEffect(() => {
     if (!socket || !selectedConversationId) return;
 
@@ -608,7 +629,13 @@ export default function ChatPage() {
     if (lastMessageSenderId !== user?.id) {
       socket.emit("messages:read", { conversationId: selectedConversationId });
     }
-  }, [lastMessageId, lastMessageSenderId, selectedConversationId, user?.id, socket]);
+  }, [
+    lastMessageId,
+    lastMessageSenderId,
+    selectedConversationId,
+    user?.id,
+    socket,
+  ]);
 
   // Send message mutation
   const sendMessageMutation = useMutation({
@@ -751,9 +778,19 @@ export default function ChatPage() {
   const useEffectRanRef = useRef<number>(0);
   const isMessageSending = useRef(false);
 
+  const handleSelectConversation = (id: string) => {
+    navigate(`/chat/${id}`);
+    setShowMobileChat(true);
+  };
+
+  const handleMobileBack = () => {
+    navigate("/chat");
+    setShowMobileChat(false);
+  };
+
   const handleSendMessage = () => {
     if (!messageInput.trim() || !selectedConversationId) return;
-
+    handleTypingStop(); // stop typing indicator when message sent
     const content = messageInput;
     isMessageSending.current = true;
     bottomRef.current?.scrollIntoView({ behavior: "auto" });
@@ -810,7 +847,8 @@ export default function ChatPage() {
                   // if message is from me or for the currently active conversation — unread count stays same
                   // if message is from other for a different conversation — increment unread count
                   unreadCount:
-                    message.senderId === user?.id || message.conversationId === selectedConversationIdRef.current
+                    message.senderId === user?.id ||
+                    message.conversationId === selectedConversationIdRef.current
                       ? conv.unreadCount
                       : conv.unreadCount + 1,
                 }
@@ -830,6 +868,46 @@ export default function ChatPage() {
     );
   }
 
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTypingRef = useRef(false);
+
+  const handleTypingStart = () => {
+    if (!socket || !selectedConversationId) return;
+    if (!isTypingRef.current) {
+      isTypingRef.current = true;
+      socket.emit("typing:start", { conversationId: selectedConversationId });
+    }
+
+    // clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // auto stop typing after 2 seconds of no input
+    typingTimeoutRef.current = setTimeout(() => {
+      handleTypingStop();
+    }, 2000);
+  };
+
+  const handleTypingStop = () => {
+    if (!socket || !selectedConversationId) return;
+    if (isTypingRef.current) {
+      isTypingRef.current = false;
+      socket.emit("typing:stop", { conversationId: selectedConversationId });
+    }
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+  };
+
+  // cleanup on unmount or conversation change
+  useEffect(() => {
+    return () => {
+      handleTypingStop();
+    };
+  }, [selectedConversationId]);
+
   // when conversation is selected — reset unread count in cache
   useEffect(() => {
     if (!selectedConversationId) return;
@@ -847,6 +925,8 @@ export default function ChatPage() {
     );
   }, [selectedConversationId, queryClient]);
 
+  const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
+
   // listen for incoming messages
   useEffect(() => {
     if (!socket) return;
@@ -859,7 +939,8 @@ export default function ChatPage() {
         // Our own message came back confirmed from the server.
         // Remove the temp-* optimistic entry and add the real message in its place.
         updateConversationLastMessage(queryClient, message);
-        if (message.conversationId !== selectedConversationIdRef.current) return;
+        if (message.conversationId !== selectedConversationIdRef.current)
+          return;
 
         setSocketMessages((prev) => [
           ...prev.filter((m) => !m.id.startsWith("temp-")),
@@ -872,9 +953,14 @@ export default function ChatPage() {
 
       // update conversation list (last message preview + unread count)
       updateConversationLastMessage(queryClient, message);
-
+      console.log("conversation updated");
+      console.log(message.conversationId, "conversationId");
+      console.log(
+        selectedConversationIdRef.current,
+        "selectedConversationId (ref)",
+      );
       if (message.conversationId !== selectedConversationIdRef.current) return;
-
+      console.log("message id matched");
       // Someone else's message — add to socketMessages, deduped.
       // We deliberately do NOT touch the infinite query cache so that
       // pageParams stay intact and pagination keeps working.
@@ -882,6 +968,7 @@ export default function ChatPage() {
         messageCameFromSocket.current = true;
 
         const exists = prev.some((m) => m.id === message.id);
+        console.log(exists, "exists");
         if (exists) return prev;
         return [...prev, message];
       });
@@ -945,13 +1032,43 @@ export default function ChatPage() {
       toast.error(data.error);
     });
 
+    socket.on(
+      "typing:start",
+      (data: { conversationId: string; userId: string }) => {
+        if (
+          data.conversationId === selectedConversationIdRef.current &&
+          data.userId !== user?.id
+        ) {
+          setIsOtherUserTyping(true);
+        }
+      },
+    );
+
+    socket.on(
+      "typing:stop",
+      (data: { conversationId: string; userId: string }) => {
+        if (
+          data.conversationId === selectedConversationIdRef.current &&
+          data.userId !== user?.id
+        ) {
+          setIsOtherUserTyping(false);
+        }
+      },
+    );
+
     return () => {
       socket.off("message:deleted");
       socket.off("message:received");
       socket.off("messages:seen");
       socket.off("message:error");
+      socket.off("typing:start");
+      socket.off("typing:stop");
     };
   }, [queryClient, user?.id, socket]);
+
+  useEffect(() => {
+    setIsOtherUserTyping(false);
+  }, [selectedConversationId]);
 
   useEffect(() => {
     useEffectRanRef.current += 1;
@@ -971,7 +1088,7 @@ export default function ChatPage() {
       if (isMessageSending.current || messageCameFromSocket.current) {
         bottomRef.current?.scrollIntoView({ behavior: "auto" });
       } else if (isMessageDeleted.current) {
-        console.log(diff,"diff in isDeleted.current")
+        console.log(diff, "diff in isDeleted.current");
         // Do nothing to preserve scroll position when a message is deleted
       } else if (messages.length <= 30) {
         // Initial load or first page
@@ -989,7 +1106,7 @@ export default function ChatPage() {
     }
 
     messageCameFromSocket.current = false;
-    isMessageDeleted.current = false; 
+    isMessageDeleted.current = false;
   }, [messages]);
 
   useEffect(() => {
@@ -1058,69 +1175,41 @@ export default function ChatPage() {
   return (
     <TooltipProvider>
       <div className="flex h-screen overflow-hidden bg-background">
-        {/* Desktop Sidebar */}
-        <div className="hidden w-80 border-r border-border md:flex">
+        {/* Sidebar — full screen on mobile when no chat open, fixed width on desktop */}
+        <div
+          className={`border-r border-border flex-col ${
+            showMobileChat ? "hidden md:flex md:w-80" : "flex w-full md:w-80"
+          }`}
+        >
           <ConversationSidebar
             conversations={conversations}
             selectedConversationId={selectedConversationId}
-            onSelectConversation={setSelectedConversationId}
+            onSelectConversation={handleSelectConversation}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             currentUser={user}
             isLoading={conversationsLoading}
-            onConversationCreated={(id) => setSelectedConversationId(id)}
+            onConversationCreated={(id) => {
+              navigate(`/chat/${id}`);
+              setShowMobileChat(true);
+            }}
             queryClient={queryClient}
             onLogout={handleLogout}
           />
         </div>
 
         {/* Main Chat Area */}
-        <div className="flex flex-1 flex-col">
-          {/* Mobile Header with Menu */}
-          <div className="flex items-center gap-2 border-b border-border bg-background p-4 md:hidden">
-            <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-              <SheetTrigger asChild>
-                <Button size="icon" variant="ghost" className="text-foreground hover:bg-muted">
-                  <Menu className="h-5 w-5" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-80 p-0">
-                <ConversationSidebar
-                  conversations={conversations}
-                  selectedConversationId={selectedConversationId}
-                  onSelectConversation={setSelectedConversationId}
-                  searchQuery={searchQuery}
-                  onSearchChange={setSearchQuery}
-                  currentUser={user}
-                  onClose={() => setMobileOpen(false)}
-                  isLoading={conversationsLoading}
-                  onConversationCreated={(id) => setSelectedConversationId(id)}
-                  queryClient={queryClient}
-                  onLogout={handleLogout}
-                />
-              </SheetContent>
-            </Sheet>
-
-            {selectedConversation && otherUser && (
-              <div className="flex items-center gap-2">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={otherUser.avatarUrl || ""} />
-                  <AvatarFallback>{getInitials(otherUser.name)}</AvatarFallback>
-                </Avatar>
-                <div>
-                  <p className="text-sm font-medium">{otherUser.name}</p>
-                  <p className="text-xs text-muted-foreground">Active now</p>
-                </div>
-              </div>
-            )}
-          </div>
-
+        <div
+          className={`flex-col flex-1 ${
+            showMobileChat ? "flex" : "hidden md:flex"
+          }`}
+        >
           {!selectedConversation ? (
-            // Empty State
-            <div className="flex flex-1 items-center justify-center">
+            // Empty State — desktop only
+            <div className="hidden md:flex flex-1 items-center justify-center">
               <div className="flex flex-col items-center gap-4">
                 <div className="rounded-full bg-muted p-4">
-                  <Menu className="h-8 w-8 text-muted-foreground" />
+                  <Send className="h-8 w-8 text-muted-foreground" />
                 </div>
                 <div className="text-center">
                   <h2 className="text-lg font-semibold text-foreground">
@@ -1134,9 +1223,19 @@ export default function ChatPage() {
             </div>
           ) : (
             <div className="flex flex-1 flex-col overflow-hidden">
-              {/* Chat Header */}
-              <div className="hidden items-center justify-between border-b border-border bg-background px-6 py-4 md:flex">
+              {/* Unified Chat Header */}
+              <div className="flex items-center justify-between border-b border-border bg-background px-4 md:px-6 py-4">
                 <div className="flex items-center gap-3">
+                  {/* back button — mobile only */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="md:hidden -ml-2"
+                    onClick={handleMobileBack}
+                  >
+                    <ArrowLeft className="h-5 w-5" />
+                  </Button>
+
                   <Avatar className="h-10 w-10">
                     <AvatarImage src={otherUser!.avatarUrl || ""} />
                     <AvatarFallback>
@@ -1159,7 +1258,7 @@ export default function ChatPage() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button size="icon" variant="ghost">
-                      <MoreVertical className="h-5 w-5 text-2xl text-muted-foreground" />
+                      <MoreVertical className="h-5 w-5 text-muted-foreground" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
@@ -1233,6 +1332,17 @@ export default function ChatPage() {
                     ))}
                   </div>
                 )}
+
+                <div className="h-5">
+                  {isOtherUserTyping && (
+                    <Marker role="status" className="">
+                      <MarkerContent className="shimmer ml-6 mt-0 mb-0">
+                        {otherUser.name} is typing...
+                      </MarkerContent>
+                    </Marker>
+                  )}
+                </div>
+
                 <div ref={bottomRef} className="h-0" />
               </ScrollArea>
 
@@ -1241,7 +1351,15 @@ export default function ChatPage() {
                 <div className="flex gap-3">
                   <textarea
                     value={messageInput}
-                    onChange={(e) => setMessageInput(e.target.value)}
+                    onChange={(e) => {
+                      setMessageInput(e.target.value);
+                      if (e.target.value.trim()) {
+                        handleTypingStart();
+                      } else {
+                        handleTypingStop(); // stop typing when input is cleared
+                      }
+                    }}
+                    onBlur={handleTypingStop} // stop when textarea loses focus
                     onKeyPress={handleKeyPress}
                     placeholder="Type a message..."
                     rows={1}
@@ -1264,31 +1382,6 @@ export default function ChatPage() {
                     <TooltipContent>Send message</TooltipContent>
                   </Tooltip>
                 </div>
-              </div>
-
-              {/* Mobile Options Header */}
-              <div className="flex items-center justify-between border-t border-border bg-background px-4 py-3 md:hidden">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelectedConversationId(null)}
-                  className="gap-2"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  Back
-                </Button>
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button size="icon" variant="ghost">
-                      <MoreVertical className="h-5 w-5" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem>Block user</DropdownMenuItem>
-                    <DropdownMenuItem>Clear chat</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
               </div>
             </div>
           )}
