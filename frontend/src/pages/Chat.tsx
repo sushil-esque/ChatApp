@@ -1036,7 +1036,7 @@ export default function ChatPage() {
       "typing:start",
       (data: { conversationId: string; userId: string }) => {
         if (
-          data.conversationId === selectedConversationId &&
+          data.conversationId === selectedConversationIdRef.current &&
           data.userId !== user?.id
         ) {
           setIsOtherUserTyping(true);
@@ -1048,7 +1048,7 @@ export default function ChatPage() {
       "typing:stop",
       (data: { conversationId: string; userId: string }) => {
         if (
-          data.conversationId === selectedConversationId &&
+          data.conversationId === selectedConversationIdRef.current &&
           data.userId !== user?.id
         ) {
           setIsOtherUserTyping(false);
@@ -1065,6 +1065,10 @@ export default function ChatPage() {
       socket.off("typing:stop");
     };
   }, [queryClient, user?.id, socket]);
+
+  useEffect(() => {
+    setIsOtherUserTyping(false);
+  }, [selectedConversationId]);
 
   useEffect(() => {
     useEffectRanRef.current += 1;

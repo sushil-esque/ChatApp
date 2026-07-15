@@ -27,8 +27,8 @@ export function useSocket() {
     // The socket object reference never changes after connect —
     // React won't re-render on its own when .connected flips to true.
     // Force a re-render so consumers always see the live connected state.
-    const onConnect = () => setSocket((s) => (s ? s : newSocket));
-    const onDisconnect = () => setSocket((s) => (s ? s : null));
+    const onConnect = () => setSocket(newSocket);
+    const onDisconnect = () => setSocket(null);
 
     newSocket.on("connect", onConnect);
     newSocket.on("disconnect", onDisconnect);
@@ -43,4 +43,3 @@ export function useSocket() {
 
   return socket;
 }
-
