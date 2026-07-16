@@ -931,7 +931,7 @@ export default function ChatPage() {
   useEffect(() => {
     if (!socket) return;
 
-    socket.on("message:received", (message: Message) => {
+    const handleMessageReceived = (message: Message) => {
       console.log("message recieved", message);
       isMessageSending.current = false;
       console.log(isMessageSending.current, "isMessageSending after received");
@@ -972,45 +972,49 @@ export default function ChatPage() {
         if (exists) return prev;
         return [...prev, message];
       });
-    });
+    };
 
-    socket.on(
-      "messages:seen",
-      (data: { conversationId: string; seenBy: string; seenAt: string }) => {
-        console.log(
-          "messages seen",
-          data.conversationId,
-          data.seenBy,
-          data.seenAt,
-        );
-        // update messages in cache — mark all messages as read
-        queryClient.setQueryData(
-          ["messages", data.conversationId],
-          (old: { pages: Message[][]; pageParams: unknown[] } | undefined) => {
-            if (!old) return old;
-            return {
-              ...old,
-              pages: old.pages.map((page) =>
-                page.map((message) => ({
-                  ...message,
-                  read: message.senderId === user?.id ? true : message.read,
-                })),
-              ),
-            };
-          },
-        );
+    socket.on("message:received", handleMessageReceived);
 
-        // also update socket messages
-        setSocketMessages((prev) =>
-          prev.map((message) => ({
-            ...message,
-            read: message.senderId === user?.id ? true : message.read,
-          })),
-        );
-      },
-    );
+    const handleMessagesSeen = (data: {
+      conversationId: string;
+      seenBy: string;
+      seenAt: string;
+    }) => {
+      console.log(
+        "messages seen",
+        data.conversationId,
+        data.seenBy,
+        data.seenAt,
+      );
+      // update messages in cache — mark all messages as read
+      queryClient.setQueryData(
+        ["messages", data.conversationId],
+        (old: { pages: Message[][]; pageParams: unknown[] } | undefined) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) =>
+              page.map((message) => ({
+                ...message,
+                read: message.senderId === user?.id ? true : message.read,
+              })),
+            ),
+          };
+        },
+      );
 
-    socket.on("message:deleted", (message: Message) => {
+      // also update socket messages
+      setSocketMessages((prev) =>
+        prev.map((message) => ({
+          ...message,
+          read: message.senderId === user?.id ? true : message.read,
+        })),
+      );
+    };
+    socket.on("messages:seen", handleMessagesSeen);
+
+    const handleMessageDeleted = (message: Message) => {
       console.log("message deleted", message);
 
       queryClient.invalidateQueries({
@@ -1021,48 +1025,51 @@ export default function ChatPage() {
 
       isMessageDeleted.current = true;
       setSocketMessages((prev) => prev.filter((m) => m.id !== message.id));
-    });
+    };
+    socket.on("message:deleted", handleMessageDeleted);
 
-    socket.on("message:error", (data: { error: string }) => {
+    const handleMessageError = (data: { error: string }) => {
       isMessageSending.current = false;
       // no correlation id in the payload, so drop any pending optimistic entries
       setSocketMessages((prev) =>
         prev.filter((m) => !m.id.startsWith("temp-")),
       );
       toast.error(data.error);
-    });
+    };
+    socket.on("message:error", handleMessageError);
 
-    socket.on(
-      "typing:start",
-      (data: { conversationId: string; userId: string }) => {
-        if (
-          data.conversationId === selectedConversationIdRef.current &&
-          data.userId !== user?.id
-        ) {
-          setIsOtherUserTyping(true);
-        }
-      },
-    );
-
-    socket.on(
-      "typing:stop",
-      (data: { conversationId: string; userId: string }) => {
-        if (
-          data.conversationId === selectedConversationIdRef.current &&
-          data.userId !== user?.id
-        ) {
-          setIsOtherUserTyping(false);
-        }
-      },
-    );
+    const handleTypingStart = (data: {
+      conversationId: string;
+      userId: string;
+    }) => {
+      if (
+        data.conversationId === selectedConversationIdRef.current &&
+        data.userId !== user?.id
+      ) {
+        setIsOtherUserTyping(true);
+      }
+    };
+    socket.on("typing:start", handleTypingStart);
+    const handleTypingStop = (data: {
+      conversationId: string;
+      userId: string;
+    }) => {
+      if (
+        data.conversationId === selectedConversationIdRef.current &&
+        data.userId !== user?.id
+      ) {
+        setIsOtherUserTyping(false);
+      }
+    };
+    socket.on("typing:stop", handleTypingStop);
 
     return () => {
-      socket.off("message:deleted");
-      socket.off("message:received");
-      socket.off("messages:seen");
-      socket.off("message:error");
-      socket.off("typing:start");
-      socket.off("typing:stop");
+      socket.off("message:deleted", handleMessageDeleted);
+      socket.off("message:received", handleMessageReceived);
+      socket.off("messages:seen", handleMessagesSeen);
+      socket.off("message:error", handleMessageError);
+      socket.off("typing:start", handleTypingStart);
+      socket.off("typing:stop", handleTypingStop);
     };
   }, [queryClient, user?.id, socket]);
 
@@ -1246,12 +1253,12 @@ export default function ChatPage() {
                     <h2 className="font-semibold text-foreground">
                       {otherUser!.name}
                     </h2>
-                    <div className="flex items-center gap-2">
+                    {/* <div className="flex items-center gap-2">
                       <div className="h-2 w-2 rounded-full bg-green-500" />
                       <span className="text-xs text-muted-foreground">
                         Active now
                       </span>
-                    </div>
+                    </div> */}
                   </div>
                 </div>
 
