@@ -99,9 +99,22 @@ function formatDate(dateString: string) {
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-  if (date.toDateString() === today.toDateString()) return "Today";
-  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
-  return date.toLocaleDateString([], { month: "long", day: "numeric" });
+
+  if (date.toDateString() === today.toDateString()) {
+    return "Today";
+  } else if (date.toDateString() === yesterday.toDateString()) {
+    return "Yesterday";
+  } else {
+    return date.toLocaleDateString([], {
+      month: "short",
+      day: "numeric",
+      year: date.getFullYear() !== today.getFullYear() ? "numeric" : undefined,
+    });
+  }
+}
+
+function generateTempId() {
+  return `temp-${Date.now()}`;
 }
 
 function getInitials(name: string) {
@@ -502,20 +515,24 @@ export default function ChatPage() {
     selectedConversationIdRef.current = selectedConversationId;
   }, [selectedConversationId]);
 
-  const [showMobileChat, setShowMobileChat] = useState(
-    !!selectedConversationId,
-  );
+  // Derive showMobileChat from URL param — no need for separate state or useEffect
+  const showMobileChat = !!selectedConversationId;
   const [messageInput, setMessageInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Sync showMobileChat when URL changes — handles browser back/forward
-  useEffect(() => {
-    setShowMobileChat(!!selectedConversationId);
-  }, [selectedConversationId]);
-
-  // messages that arrived via socket — kept separate to avoid mutating the infinite query cache
-  // (mutating the cache would corrupt pageParams and break pagination)
   const [socketMessages, setSocketMessages] = useState<Message[]>([]);
+  const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
+
+  // Reset conversation-specific state during render when switching conversations
+  const [prevSelectedConvId, setPrevSelectedConvId] = useState(
+    selectedConversationId,
+  );
+  if (prevSelectedConvId !== selectedConversationId) {
+    setPrevSelectedConvId(selectedConversationId);
+    setSocketMessages([]);
+    setIsOtherUserTyping(false);
+  }
+
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   // Intersection observer refs for infinite scroll
@@ -543,11 +560,6 @@ export default function ChatPage() {
       socket.emit("leave:conversation", selectedConversationId);
     };
   }, [selectedConversationId, socket]);
-
-  // Clear socket messages whenever the user switches conversations
-  useEffect(() => {
-    setSocketMessages([]);
-  }, [selectedConversationId]);
 
   // Fetch messages for selected conversation with infinite scroll
   const {
@@ -747,11 +759,29 @@ export default function ChatPage() {
       isMessageDeleted.current = true;
       return messageId;
     },
-    onSuccess: (_, __, context) => {
-      void queryClient.invalidateQueries({
-        queryKey: ["messages", selectedConversationId],
-      });
-      setSocketMessages((prev) => prev.filter((m) => m.id != context));
+    onSuccess: (response, __, context) => {
+      const deletedMessage = response.data; // the updated message from API
+      // void queryClient.invalidateQueries({
+      //   queryKey: ["messages", selectedConversationId],
+      // });
+      // update in infinite query cache
+      console.log("message deleted", deletedMessage);
+      queryClient.setQueryData(
+        ["messages", selectedConversationId],
+        (old: { pages: Message[][]; pageParams: unknown[] } | undefined) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) =>
+              page.map((m) => (m.id === context ? deletedMessage : m)),
+            ),
+          };
+        },
+      );
+      updateConversationDeletedMessage(queryClient, deletedMessage);
+      setSocketMessages((prev) =>
+        prev.map((m) => (m.id === context ? deletedMessage : m)),
+      );
       toast.success("Message deleted");
     },
     onError: () => {
@@ -780,12 +810,10 @@ export default function ChatPage() {
 
   const handleSelectConversation = (id: string) => {
     navigate(`/chat/${id}`);
-    setShowMobileChat(true);
   };
 
   const handleMobileBack = () => {
     navigate("/chat");
-    setShowMobileChat(false);
   };
 
   const handleSendMessage = () => {
@@ -800,7 +828,7 @@ export default function ChatPage() {
       // Optimistic update — add the temp message to socketMessages immediately
       // so the sender sees instant feedback without waiting for the server round-trip.
       const optimisticMessage: Message = {
-        id: `temp-${Date.now()}`,
+        id: generateTempId(),
         conversationId: selectedConversationId,
         senderId: user!.id,
         content,
@@ -826,6 +854,7 @@ export default function ChatPage() {
       console.log("fallback to rest");
     }
   };
+  console.log(socketMessages, "socketMessages");
 
   const messageCameFromSocket = useRef(false);
   // helper function to update conversation in cache
@@ -837,23 +866,35 @@ export default function ChatPage() {
       ["conversations"],
       (old: Conversation[] | undefined) => {
         if (!old) return old;
+
+        const exists = old.some((conv) => conv.id === message.conversationId);
+        if (!exists) {
+          // If conversation doesn't exist in cache, invalidate conversations query to fetch from server
+          void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+          return old;
+        }
+
         return old
-          .map((conv) =>
-            conv.id === message.conversationId
-              ? {
-                  ...conv,
-                  lastMessageAt: message.createdAt,
-                  messages: [message], // last message preview
-                  // if message is from me or for the currently active conversation — unread count stays same
-                  // if message is from other for a different conversation — increment unread count
-                  unreadCount:
-                    message.senderId === user?.id ||
-                    message.conversationId === selectedConversationIdRef.current
-                      ? conv.unreadCount
-                      : conv.unreadCount + 1,
-                }
-              : conv,
-          )
+          .map((conv) => {
+            if (conv.id !== message.conversationId) return conv;
+
+            const isCurrentActiveConv =
+              message.conversationId === selectedConversationIdRef.current;
+            const isOwnMessage = message.senderId === user?.id;
+
+            const newUnreadCount = isCurrentActiveConv
+              ? 0
+              : isOwnMessage
+                ? conv.unreadCount
+                : conv.unreadCount + 1;
+
+            return {
+              ...conv,
+              lastMessageAt: message.createdAt,
+              messages: [message], // last message preview
+              unreadCount: newUnreadCount,
+            };
+          })
           .sort((a, b) => {
             // keep most recent conversation at top
             const aTime = a.lastMessageAt
@@ -864,6 +905,36 @@ export default function ChatPage() {
               : 0;
             return bTime - aTime;
           });
+      },
+    );
+  }
+
+  function updateConversationDeletedMessage(
+    queryClient: QueryClient,
+    deletedMessage: Message,
+  ) {
+    queryClient.setQueryData(
+      ["conversations"],
+      (old: Conversation[] | undefined) => {
+        if (!old) return old;
+
+        return old.map((conversation) => {
+          if (conversation.id !== deletedMessage.conversationId)
+            return conversation;
+
+          const updatedMessages = conversation.messages.some(
+            (message) => message.id === deletedMessage.id,
+          )
+            ? conversation.messages.map((message) =>
+                message.id === deletedMessage.id ? deletedMessage : message,
+              )
+            : [deletedMessage];
+
+          return {
+            ...conversation,
+            messages: updatedMessages,
+          };
+        });
       },
     );
   }
@@ -925,8 +996,6 @@ export default function ChatPage() {
     );
   }, [selectedConversationId, queryClient]);
 
-  const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
-
   // listen for incoming messages
   useEffect(() => {
     if (!socket) return;
@@ -960,6 +1029,7 @@ export default function ChatPage() {
         "selectedConversationId (ref)",
       );
       if (message.conversationId !== selectedConversationIdRef.current) return;
+      socket.emit("messages:read", { conversationId: message.conversationId });
       console.log("message id matched");
       // Someone else's message — add to socketMessages, deduped.
       // We deliberately do NOT touch the infinite query cache so that
@@ -1017,14 +1087,28 @@ export default function ChatPage() {
     const handleMessageDeleted = (message: Message) => {
       console.log("message deleted", message);
 
-      queryClient.invalidateQueries({
-        queryKey: ["messages", message.conversationId],
-      });
+      // update in infinite query cache
+      queryClient.setQueryData(
+        ["messages", message.conversationId],
+        (old: { pages: Message[][]; pageParams: unknown[] } | undefined) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) =>
+              page.map((m) => (m.id === message.id ? message : m)),
+            ),
+          };
+        },
+      );
+      updateConversationDeletedMessage(queryClient, message);
 
       if (message.conversationId !== selectedConversationIdRef.current) return;
 
       isMessageDeleted.current = true;
-      setSocketMessages((prev) => prev.filter((m) => m.id !== message.id));
+      // update in socket messages
+      setSocketMessages((prev) =>
+        prev.map((m) => (m.id === message.id ? message : m)),
+      );
     };
     socket.on("message:deleted", handleMessageDeleted);
 
@@ -1072,10 +1156,6 @@ export default function ChatPage() {
       socket.off("typing:stop", handleTypingStop);
     };
   }, [queryClient, user?.id, socket]);
-
-  useEffect(() => {
-    setIsOtherUserTyping(false);
-  }, [selectedConversationId]);
 
   useEffect(() => {
     useEffectRanRef.current += 1;
@@ -1198,7 +1278,6 @@ export default function ChatPage() {
             isLoading={conversationsLoading}
             onConversationCreated={(id) => {
               navigate(`/chat/${id}`);
-              setShowMobileChat(true);
             }}
             queryClient={queryClient}
             onLogout={handleLogout}

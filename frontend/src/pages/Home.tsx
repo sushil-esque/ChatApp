@@ -3,9 +3,9 @@ import { Link } from "react-router-dom";
 function Home() {
   return (
     <div className="flex flex-col items-center justify-center  gap-4">
-      <h1 className="text-8xl font-bold text-primary">GuffHub</h1>
+      <h1 className="text-8xl font-bold text-primary">GuffVerse</h1>
       <p className="text-lg text-muted-foreground">
-        Online Chat Application
+        Chat with your friends
       </p>
       <div className="flex gap-4">
         <Button  variant="outline" asChild>

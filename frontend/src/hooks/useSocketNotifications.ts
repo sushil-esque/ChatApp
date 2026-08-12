@@ -1,5 +1,6 @@
 import { useSocketContext } from "@/context/SocketContext";
 import { useAuthStore } from "@/store/authStore";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -9,14 +10,19 @@ export function useSocketNotifications() {
   const user = useAuthStore((state) => state.user);
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const selectedConversationId = location.pathname.startsWith("/chat/")
     ? location.pathname.split("/chat/")[1]
     : undefined;
   useEffect(() => {
     if (!socket) return;
 
-    const handleMessageReceived = (message) => {
+    const handleMessageReceived = (message: any) => {
       console.log(message);
+
+      // Invalidate conversations query to keep unread badges fresh across the application
+      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+
       if (message.senderId === user?.id) return; // ignore own messages
 
       const isOnChatPage = location.pathname.startsWith("/chat");
