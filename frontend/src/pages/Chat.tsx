@@ -778,6 +778,7 @@ export default function ChatPage() {
           };
         },
       );
+      updateConversationDeletedMessage(queryClient, deletedMessage);
       setSocketMessages((prev) =>
         prev.map((m) => (m.id === context ? deletedMessage : m)),
       );
@@ -904,6 +905,36 @@ export default function ChatPage() {
               : 0;
             return bTime - aTime;
           });
+      },
+    );
+  }
+
+  function updateConversationDeletedMessage(
+    queryClient: QueryClient,
+    deletedMessage: Message,
+  ) {
+    queryClient.setQueryData(
+      ["conversations"],
+      (old: Conversation[] | undefined) => {
+        if (!old) return old;
+
+        return old.map((conversation) => {
+          if (conversation.id !== deletedMessage.conversationId)
+            return conversation;
+
+          const updatedMessages = conversation.messages.some(
+            (message) => message.id === deletedMessage.id,
+          )
+            ? conversation.messages.map((message) =>
+                message.id === deletedMessage.id ? deletedMessage : message,
+              )
+            : [deletedMessage];
+
+          return {
+            ...conversation,
+            messages: updatedMessages,
+          };
+        });
       },
     );
   }
@@ -1069,6 +1100,7 @@ export default function ChatPage() {
           };
         },
       );
+      updateConversationDeletedMessage(queryClient, message);
 
       if (message.conversationId !== selectedConversationIdRef.current) return;
 
@@ -1224,7 +1256,6 @@ export default function ChatPage() {
   };
 
   const handleDeleteMessage = (messageId: string) => {
-
     deleteMessageMutation.mutate(messageId);
   };
 

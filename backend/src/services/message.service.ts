@@ -57,6 +57,28 @@ export async function sendMessage(conversationId: string, senderId: string, cont
   return message;
 }
 
+function normalizeMessageForClient(
+  message: {
+    senderId: string;
+    createdAt: Date;
+    sender?: { id: string; name: string; avatarUrl: string | null } | null;
+  },
+  userId: string,
+  recipientLastReadAt: Date | null | undefined,
+) {
+  let isReadAt = false;
+  if (message.senderId === userId) {
+    if (recipientLastReadAt) {
+      isReadAt = recipientLastReadAt >= message.createdAt;
+    }
+  }
+
+  return {
+    ...message,
+    read: isReadAt,
+  };
+}
+
 export async function getMessages(conversationId: string, userId: string, cursor?: string) {
   const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
   if (!conversation) throw new CustomError("Conversation not found", 404);
@@ -95,25 +117,7 @@ export async function getMessages(conversationId: string, userId: string, cursor
       });
   }
 
-  return messages.map((message) => {
-    let isReadAt = false;
-    if (message.senderId === userId) {
-      if (recipientLastReadAt) {
-        if (recipientLastReadAt < message.createdAt) {
-          isReadAt = false;
-        } else {
-          isReadAt = true;
-        }
-      } else {
-        isReadAt = false;
-      }
-    }
-
-    return {
-      ...message,
-      read: isReadAt,
-    };
-  });
+  return messages.map((message) => normalizeMessageForClient(message, userId, recipientLastReadAt));
 }
 
 export async function deleteMessage(conversationId: string, messageId: string, userId: string) {
@@ -121,16 +125,32 @@ export async function deleteMessage(conversationId: string, messageId: string, u
   if (!message) throw new CustomError("Message not found", 404);
   if (message.conversationId !== conversationId) throw new CustomError("Message does not belong to conversation", 400);
   if (message.senderId !== userId) throw new CustomError("Unauthorized", 403);
+
   const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
   if (!conversation) throw new CustomError("Conversation not found", 404);
- const deletedMessage = await prisma.message.update({
+
+  const recipientLastReadAt = conversation.userAId === userId ? conversation.userBLastReadAt : conversation.userALastReadAt;
+
+  const deletedMessage = await prisma.message.update({
     where: { id: messageId },
     data: { isDeleted: true, content: "This message was deleted" },
+    include: {
+      sender: {
+        select: {
+          id: true,
+          name: true,
+          avatarUrl: true,
+        },
+      },
+    },
   });
+
+  const normalizedDeletedMessage = normalizeMessageForClient(deletedMessage, userId, recipientLastReadAt);
+
   const io = getIo();
   if (io) {
     const recipientId = conversation.userAId === userId ? conversation.userBId : conversation.userAId;
-    io.to(conversationId).to(recipientId).emit("message:deleted", deletedMessage);
+    io.to(conversationId).to(recipientId).emit("message:deleted", normalizedDeletedMessage);
   }
-  return deletedMessage;
+  return normalizedDeletedMessage;
 }
