@@ -71,7 +71,7 @@ export async function getMessages(conversationId: string, userId: string, cursor
   // Wrapping reads in $transaction holds a dedicated DB connection for the full
   // query duration, which exhausts the pool under concurrent load.
   const messages = await prisma.message.findMany({
-    where: { conversationId, isDeleted: false },
+    where: { conversationId },
     orderBy: { createdAt: "desc" },
     take: 30,
     ...(cursor && { cursor: { id: cursor }, skip: 1 }),
@@ -123,13 +123,14 @@ export async function deleteMessage(conversationId: string, messageId: string, u
   if (message.senderId !== userId) throw new CustomError("Unauthorized", 403);
   const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
   if (!conversation) throw new CustomError("Conversation not found", 404);
-  await prisma.message.update({
+ const deletedMessage = await prisma.message.update({
     where: { id: messageId },
     data: { isDeleted: true, content: "This message was deleted" },
   });
   const io = getIo();
   if (io) {
     const recipientId = conversation.userAId === userId ? conversation.userBId : conversation.userAId;
-    io.to(conversationId).to(recipientId).emit("message:deleted", message);
+    io.to(conversationId).to(recipientId).emit("message:deleted", deletedMessage);
   }
+  return deletedMessage;
 }
