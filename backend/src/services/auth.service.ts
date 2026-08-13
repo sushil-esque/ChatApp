@@ -44,7 +44,7 @@ export async function register(name: string, email: string, password: string) {
   const otp = generateOtp();
   const otpHash = await hashOtp(otp);
 
-  const user = await prisma.$transaction(async (tx) => {
+  const user = await prisma.$transaction(async (tx: any) => {
     const newUser = await tx.user.create({
       data: { email, name, passwordHash },
     });

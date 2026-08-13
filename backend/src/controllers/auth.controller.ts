@@ -1,11 +1,11 @@
 import crypto from "crypto";
 
-import { prisma } from "../db/prisma";
-import { loginDto, otpDto, registerDto, resendOtpDto } from "../dtos/auth.dto";
-import { CustomError } from "../errors/customError";
-import { asyncHandler } from "../middlewares/asyncHandler";
-import * as authService from "../services/auth.service";
-import { generateAccessToken, verifyRefreshToken } from "../utils/jwt";
+import { prisma } from "../db/prisma.js";
+import { loginDto, otpDto, registerDto, resendOtpDto } from "../dtos/auth.dto.js";
+import { CustomError } from "../errors/customError.js";
+import { asyncHandler } from "../middlewares/asyncHandler.js";
+import * as authService from "../services/auth.service.js";
+import { generateAccessToken, verifyRefreshToken } from "../utils/jwt.js";
 
 export const register = asyncHandler(async (req, res) => {
   const parsed = registerDto.safeParse(req.body);

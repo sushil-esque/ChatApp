@@ -1,6 +1,6 @@
-import { createConversationDto } from "../dtos/conversation.dto";
-import { getMessagesDto, sendMessageDto, paramsConversationDto, paramsMessageIdDto } from "../dtos/message.dto";
-import { asyncHandler } from "../middlewares/asyncHandler";
+import { createConversationDto } from "../dtos/conversation.dto.js";
+import { getMessagesDto, sendMessageDto, paramsConversationDto, paramsMessageIdDto } from "../dtos/message.dto.js";
+import { asyncHandler } from "../middlewares/asyncHandler.js";
 import * as conversationService from "../services/conversation.service.js";
 import * as messageService from "../services/message.service.js";
 

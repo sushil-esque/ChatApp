@@ -1,5 +1,5 @@
-import { prisma } from "../db/prisma";
-import { CustomError } from "../errors/customError";
+import { prisma } from "../db/prisma.js";
+import { CustomError } from "../errors/customError.js";
 
 export async function createConversation(userAId: string, userBId: string) {
   if (userAId === userBId) throw new CustomError("Cannot start conversation with yourself", 400);
@@ -52,7 +52,7 @@ export async function getConversations(userId: string) {
     },
   });
   return Promise.all(
-    conversations.map(async (conv) => {
+    conversations.map(async (conv: any) => {
       const isUserA = conv.userAId === userId;
       const lastReadAt = isUserA ? conv.userALastReadAt : conv.userBLastReadAt;
 

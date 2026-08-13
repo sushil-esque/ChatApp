@@ -1,7 +1,7 @@
 import { Server } from "socket.io";
 import { Server as httpServer } from "http";
-import { verifyAccessToken } from "./utils/jwt";
-import { prisma } from "./db/prisma";
+import { verifyAccessToken } from "./utils/jwt.js";
+import { prisma } from "./db/prisma.js";
 
 let ioInstance: Server | null = null;
 

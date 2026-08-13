@@ -1,6 +1,6 @@
-import { prisma } from "../db/prisma";
-import { CustomError } from "../errors/customError";
-import { getIo } from "../socket";
+import { prisma } from "../db/prisma.js";
+import { CustomError } from "../errors/customError.js";
+import { getIo } from "../socket.js";
 
 export async function sendMessage(conversationId: string, senderId: string, content: string) {
   const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
@@ -117,7 +117,7 @@ export async function getMessages(conversationId: string, userId: string, cursor
       });
   }
 
-  return messages.map((message) => normalizeMessageForClient(message, userId, recipientLastReadAt));
+  return messages.map((message: any) => normalizeMessageForClient(message, userId, recipientLastReadAt));
 }
 
 export async function deleteMessage(conversationId: string, messageId: string, userId: string) {

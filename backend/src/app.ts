@@ -2,8 +2,8 @@ import cookieParser from "cookie-parser";
 import express from "express";
 import cors from "cors";
 
-import { errorHandler } from "./middlewares/errorHandler";
-import authRouter from "./routes/auth.routes";
+import { errorHandler } from "./middlewares/errorHandler.js";
+import authRouter from "./routes/auth.routes.js";
 import conversationRouter from "./routes/conversation.routes.js";
 import userRouter from "./routes/user.routes.js";
 import morgan from "morgan";
