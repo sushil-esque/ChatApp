@@ -5,7 +5,7 @@
     "moduleResolution": "NodeNext",
     "target": "ES2023",
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": ".",
     "lib": ["ES2023"],
     "declaration": true,
     "declarationMap": true,
@@ -16,6 +16,6 @@
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": ["src/**/*.ts", "types/**/*.d.ts"],
-  "exclude": ["dist", "node_modules", "generated"]
+  "include": ["src/**/*.ts", "generated/**/*.ts", "types/**/*.d.ts"],
+  "exclude": ["dist", "node_modules"]
 }
