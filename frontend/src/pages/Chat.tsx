@@ -137,7 +137,7 @@ function insertOptimisticMessage(
 
   for (let i = 0; i < oldData.pages.length; i++) {
     const page = oldData.pages[i];
-    const newPage = carryOver ? [carryOver, ...page] : [...page];
+    const newPage: Message[] = carryOver ? [carryOver, ...page] : [...page];
 
     if (newPage.length > 30) {
       carryOver = newPage.pop()!;
@@ -730,7 +730,7 @@ export default function ChatPage() {
       //   }
       // });
     },
-    onError: (err, content, context) => {
+    onError: (err, _content, context) => {
       const targetConversationId =
         context?.conversationId || selectedConversationId;
       //                   here context = { previousMessages }  this is what onMutate returned
@@ -1420,7 +1420,7 @@ export default function ChatPage() {
                 )}
 
                 <div className="h-5">
-                  {isOtherUserTyping && (
+                  {isOtherUserTyping && otherUser && (
                     <Marker role="status" className="">
                       <MarkerContent className="shimmer ml-6 mt-0 mb-0">
                         {otherUser.name} is typing...
