@@ -28,7 +28,7 @@ export const verifyEmail = asyncHandler(async (req, res) => {
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
     maxAge: 30 * 24 * 60 * 60 * 1000,
-    sameSite: "strict",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     secure: process.env.NODE_ENV === "production",
   });
 
@@ -69,7 +69,7 @@ export const login = asyncHandler(async (req, res) => {
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
     maxAge: 30 * 24 * 60 * 60 * 1000,
-    sameSite: "strict",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     secure: process.env.NODE_ENV === "production",
   });
   return res.status(200).json({ accessToken, message: "Login successful", user });
@@ -84,7 +84,7 @@ export const logout = asyncHandler(async (req, res) => {
 
   res.clearCookie("refreshToken", {
     httpOnly: true,
-    sameSite: "strict",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     secure: process.env.NODE_ENV === "production",
   });
 
@@ -95,7 +95,7 @@ export const logoutAll = asyncHandler(async (req, res) => {
 
   res.clearCookie("refreshToken", {
     httpOnly: true,
-    sameSite: "strict",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     secure: process.env.NODE_ENV === "production",
   });
 
