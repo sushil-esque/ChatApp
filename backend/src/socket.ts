@@ -6,9 +6,21 @@ import { prisma } from "./db/prisma.js";
 let ioInstance: Server | null = null;
 
 export function initSocket(httpServer: httpServer) {
+  const vercelOriginRegex = /^https:\/\/[\w-]+\.vercel\.app$/;
+  const allowedOrigins = [
+    "http://localhost:5173",
+    ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
+  ];
+
   const io = new Server(httpServer, {
     cors: {
-      origin: "http://localhost:5173",
+      origin: (origin, callback) => {
+        if (!origin) { callback(null, true); return; }
+        if (allowedOrigins.includes(origin) || vercelOriginRegex.test(origin)) {
+          callback(null, true); return;
+        }
+        callback(new Error(`Socket CORS: origin '${origin}' not allowed`));
+      },
       credentials: true,
     },
   });
