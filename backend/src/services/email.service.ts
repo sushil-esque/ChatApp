@@ -3,7 +3,6 @@
 // import sgMail from "@sendgrid/mail";
 
 import config from '../config/config.js'
-import { CustomError } from '../errors/customError.js'
 
 export const sendEmail = async (
   to: string,
@@ -31,13 +30,17 @@ export const sendEmail = async (
       }),
     })
 
-    const data = await response.json()
+    const data = await response.json() as {
+      code: number
+      message: string
+      messageId: string
+    }
 
     if (!response.ok) {
       console.error('Brevo error:', data)
       return false  // ← return false on failure
     }
-
+  
     console.log('Email sent successfully:', data.messageId)
     return true  // ← return true on success
   } catch (error) {
