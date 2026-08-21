@@ -105,6 +105,6 @@ export const logoutAll = asyncHandler(async (req, res) => {
 export const resendOtp = asyncHandler(async (req, res) => {
   const parsed = resendOtpDto.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ details: parsed.error.issues, error: "Invalid Payload" });
-  await authService.resendOtp(parsed.data.email);
+   await authService.resendOtp(parsed.data.email);
   res.status(200).json({ message: "OTP resent successfully" });
 });

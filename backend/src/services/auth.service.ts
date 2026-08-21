@@ -9,26 +9,23 @@ import { sendEmail } from "./email.service.js";
 
 export async function login(email: string, password: string, deviceName?: string, ipAddress?: string) {
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) throw new CustomError("Invalid Credentials", 401, 'INVALID_CREDENTIALS');
+  if (!user) throw new CustomError("Invalid Credentials", 401, "INVALID_CREDENTIALS");
   const hashedPassword = user.passwordHash;
   const isPasswordMatch = await bcrypt.compare(password, hashedPassword);
-  if (!isPasswordMatch) throw new CustomError("Invalid Credentials", 401, 'INVALID_CREDENTIALS');
-  if (!user.verified) throw new CustomError("Email not verified", 403, 'EMAIL_NOT_VERIFIED');
+  if (!isPasswordMatch) throw new CustomError("Invalid Credentials", 401, "INVALID_CREDENTIALS");
+  if (!user.verified) throw new CustomError("Email not verified", 403, "EMAIL_NOT_VERIFIED");
   const { accessToken, refreshToken } = await createSession(user.id, deviceName, ipAddress);
   return { accessToken, refreshToken, user: sanitizeUser(user) };
 }
 
 export async function logout(refreshToken: string) {
-  const refreshTokenHash = crypto
-    .createHash('sha256')
-    .update(refreshToken)
-    .digest('hex')
+  const refreshTokenHash = crypto.createHash("sha256").update(refreshToken).digest("hex");
 
-  await prisma.refreshToken.deleteMany({ where: { refreshTokenHash } })
+  await prisma.refreshToken.deleteMany({ where: { refreshTokenHash } });
 }
 
 export async function logoutAll(userId: string) {
-  await prisma.refreshToken.deleteMany({ where: { userId } })
+  await prisma.refreshToken.deleteMany({ where: { userId } });
 }
 
 export async function register(name: string, email: string, password: string) {
@@ -38,13 +35,13 @@ export async function register(name: string, email: string, password: string) {
     },
   });
   if (isAlreadyRegistered) {
-    throw new CustomError("User already exists", 409, 'USER_ALREADY_EXISTS');
+    throw new CustomError("User already exists", 409, "USER_ALREADY_EXISTS");
   }
   const passwordHash = await bcrypt.hash(password, 10);
   const otp = generateOtp();
   const otpHash = await hashOtp(otp);
 
-  const user = await prisma.$transaction(async (tx: any) => {
+  const user = await prisma.$transaction(async (tx) => {
     const newUser = await tx.user.create({
       data: { email, name, passwordHash },
     });
@@ -63,7 +60,11 @@ export async function register(name: string, email: string, password: string) {
     return newUser;
   });
 
-  await sendEmail(email, "Welcome to GuffHub - Verify your email", `Your OTP is ${otp}`, `<p>Your OTP is <b>${otp}</b></p>`);
+  const isEmailSent = await sendEmail(email, "Welcome to GuffHub - Verify your email", `Your OTP is ${otp}`, `<p>Your OTP is <b>${otp}</b></p>`);
+  if (!isEmailSent) {
+    await prisma.user.delete({ where: { id: user.id } });
+    throw new CustomError("Email not sent, please try again later", 500, "EMAIL_NOT_SENT");
+  }
   return sanitizeUser(user);
 }
 
@@ -113,7 +114,8 @@ export async function resendOtp(email: string) {
     where: { userId: user.id },
   });
 
-  await sendEmail(user.email, "GuffHub - Your New OTP", `Your OTP is ${otp}`, `<p>Your OTP is <b>${otp}</b></p>`);
+ const isEmailSent = await sendEmail(user.email, "GuffHub - Your New OTP", `Your OTP is ${otp}`, `<p>Your OTP is <b>${otp}</b></p>`);
+ if(!isEmailSent) throw new CustomError("Email not sent", 500, 'EMAIL_NOT_SENT');
 }
 
 export async function verifyEmail(email: string, inputOtp: string, deviceName?: string, ipAddress?: string) {
