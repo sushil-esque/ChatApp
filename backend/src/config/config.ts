@@ -40,7 +40,7 @@ const config = {
   // },
   // resendApiKey: process.env.RESEND_API_KEY,
   // sendgridApiKey: process.env.SENDGRID_API_KEY,
-  // brevoApiKey: process.env.BREVO_API_KEY,
+  brevoApiKey: process.env.BREVO_API_KEY,
   senderEmail: process.env.SENDER_EMAIL,
 };
 export default config;
